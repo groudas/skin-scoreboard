@@ -1,72 +1,88 @@
 # Dota 2 Cosmetic Popularity Tracker
 
-This project fetches live Dota 2 match data, identifies top matches by spectators, downloads match details, extracts cosmetic usage, and aggregates a daily "popularity score" for each cosmetic based on spectator counts.
+This project tracks the popularity of Dota 2 cosmetics by analyzing live match data from the OpenDota API. It identifies highly-spectated matches, extracts cosmetic usage from those matches, and aggregates daily statistics on which cosmetics are seen in the most watched games.
+
+**Experimental - Use with Caution**
+>
+> This code is under active development and is currently **highly experimental**.
+>
+> **Upcoming (v0.5 MVP):**
+> *   MongoDB full migration (speedy DB queries)
+> *   Usage indicators (better data comprehension)
+> *   Marketplace price analysis (actual usefulness for the data)
+>
+> By using this software, you acknowledge it is provided at your **own risk**.
+
+## Current Features
+
+*   Fetches live match data from the OpenDota API.
+*   Filters for matches with high spectator counts.
+*   Downloads detailed data for selected matches.
+*   Extracts cosmetic items used by heroes in those matches.
+*   Aggregates daily popularity scores based on spectators.
+*   Persists raw and processed data locally.
 
 ## Project Structure
 
--   `data/`: Stores all downloaded and processed data.
-    -   `raw/`: Raw JSON data from the OpenDota live API.
-    -   `processed/`: Filtered list of top matches per timestamp.
-    -   `matches/`: Detailed JSON data for individual matches.
-    -   `filtered_matches/`: Extracted cosmetic data per match.
-    -   `database/`: Final aggregated daily cosmetic statistics.
--   `src/`: Contains the Node.js scripts for each step.
-    -   `config.js`: Central configuration file.
-    -   `utils.js`: Helper functions (logging, file system, etc.).
-    -   `stepX_*.js`: Scripts for each processing stage.
--   `package.json`: Project dependencies and scripts.
--   `run_all.bat`/`run_all.sh`: Optional scripts to run steps 2-5 sequentially.
+*   `data/`: Storage for all data (raw, processed, match details, filtered data, aggregated stats).
+*   `src/`: Contains the core Node.js scripts (`config.js`, `utils.js`, `stepX_*.js`).
+*   `package.json`: Project dependencies and scripts.
+*   `run_all.bat`/`run_all.sh`: Helper scripts to run processing steps sequentially.
 
 ## Setup
 
-1.  Ensure [Node.js](https://nodejs.org/) (which includes npm) is installed.
-2.  Clone this repository or download the source code.
-3.  Navigate to the project directory in your terminal.
-4.  Install dependencies:
+1.  **Prerequisites:** Ensure you have [Node.js](https://nodejs.org/) (includes npm) installed.
+2.  **Clone Repository:** Clone this repository to your local machine.
+3.  **Install Dependencies:** Navigate to the project directory in your terminal and run:
     ```bash
     npm install
     ```
-5.  Review and adjust settings in `src/config.js` if needed (e.g., API URLs, intervals, directories).
+4.  **Configuration:** Review `src/config.js` and adjust settings like API URLs, polling intervals, or data directories if necessary.
 
-## Execution
+## Usage
 
-The process involves multiple steps:
+The project workflow involves two main phases: continuously fetching live data and periodically processing that data through several steps.
 
-1.  **Fetch Live Data (Continuous):**
-    This script runs indefinitely, fetching live match data periodically. Start it in a separate terminal or using a process manager (like `pm2`).
+1.  **Start Live Data Fetching (Continuous):**
+    This script (`step1_fetch_live.js`) runs indefinitely, polling the OpenDota live API. It should be run in a separate terminal or managed by a process manager (e.g., `pm2`).
     ```bash
     npm run start:fetch
     # or: node src/step1_fetch_live.js
     ```
 
-2.  **Process Data (Run Periodically):**
-    Run steps 2 through 5 sequentially after enough raw data has been collected. You can run them individually or use the provided helper scripts.
-    ```bash
-    # Option 1: Run all steps 2-5 using npm script
-    npm run run:all
+    There is also a step1.bat that works exacly the .js file, but you can run using `./step1.bat` or just opening the file inside windows.
 
-    # Option 2: Run using batch/shell script
-    # ./run_all.sh  (Linux/macOS)
-    # .\run_all.bat (Windows)
+2.  **Run Data Processing Steps (Periodically):**
+    After `step1` has collected enough data, run the subsequent steps (`step2` through `step5`) to process it. These steps are designed to be run sequentially.
 
-    # Option 3: Run steps individually
-    # npm run step2
-    # npm run step3
-    # npm run step4
-    # npm run step5
-    ```
+    *   **Recommended:** Use the provided npm script or shell/batch file to run steps 2-5 automatically.
+        ```bash
+        # Using npm script
+        npm run run:all
 
-**Workflow:**
+        # Using shell/batch script (from project root)
+        # ./run_all.sh  (Linux/macOS)
+        # .\run_all.bat (Windows)
+        ```
 
--   `step1` downloads raw live data -> `data/raw/`
--   `step2` reads raw data, filters top matches, saves -> `data/processed/filtered_live_matches.json`, renames raw files.
--   `step3` reads filtered matches, downloads details (if old enough and not present) -> `data/matches/`
--   `step4` reads match details, extracts cosmetics/date/spectators, saves -> `data/filtered_matches/`
--   `step5` reads extracted data, updates/aggregates daily stats -> `data/database/daily_cosmetic_stats.json`
+    *   **Alternatively:** Run each step individually.
+        ```bash
+        npm run step2 # Filters live data
+        npm run step3 # Downloads match details
+        npm run step4 # Extracts cosmetic data from matches
+        npm run step5 # Aggregates daily statistics
+        ```
 
-**Important Notes:**
+## Workflow Overview
 
--   Be mindful of the OpenDota API rate limits. The default delays in `config.js` are conservative.
--   Step 3 includes a `minimumMatchAgeHours` check because replays might take time to become available on the API.
--   Data preservation is handled by keeping files in `raw`, `matches`, and `filtered_matches`. The final database aggregates the information.
--   Step 5 includes logic to update entries if a match is reprocessed with a higher spectator count.
+*   `step1`: Fetches raw live match data (`data/raw/`).
+*   `step2`: Filters raw data for top matches, saves a list, and moves raw files (`data/processed/filtered_live_matches.json`, `data/raw/processed/`).
+*   `step3`: Downloads detailed match data for filtered matches (`data/matches/`).
+*   `step4`: Extracts cosmetic usage and relevant info from match details (`data/filtered_matches/`).
+*   `step5`: Reads extracted data and updates the aggregated daily statistics database (`data/database/daily_cosmetic_stats.json`).
+
+## Notes
+
+*   Be mindful of OpenDota API rate limits. Default settings in `config.js` are conservative.
+*   Step 3 includes a check (`minimumMatchAgeHours` in `config.js`) to ensure match details are likely available on the API.
+*   Data from `raw`, `matches`, and `filtered_matches` directories is preserved for potential reprocessing or analysis.
