@@ -1,17 +1,17 @@
-# Dota 2 Cosmetic Popularity Tracker
+# Skin Scoreboard
 
 This project tracks the popularity of Dota 2 cosmetics by analyzing live match data from the OpenDota API. It identifies highly-spectated matches, extracts cosmetic usage from those matches, and aggregates daily statistics on which cosmetics are seen in the most watched games.
 
 **Experimental - Use with Caution**
->
-> This code is under active development and is currently **highly experimental**.
->
-> **Upcoming (v0.5 MVP):**
-> *   MongoDB full migration (speedy DB queries)
-> *   Usage indicators (better data comprehension)
-> *   Marketplace price analysis (actual usefulness for the data)
->
-> By using this software, you acknowledge it is provided at your **own risk**.
+
+This code is under active development and is currently **highly experimental**.
+
+**Upcoming (v0.5 MVP):**
+*   MongoDB full migration (speedy DB queries)
+*   Usage indicators (better data comprehension)
+*   Marketplace price analysis (actual usefulness for the data)
+
+By using this software, you acknowledge it is provided at your **own risk**.
 
 ## Current Features
 
