@@ -1,0 +1,25 @@
+{
+    "name": "dota-cosmetic-tracker",
+    "version": "1.0.0",
+    "description": "Tracks Dota 2 cosmetic popularity based on live game spectators.",
+    "main": "src/step1_fetch_live.js",
+    "scripts": {
+      "start:fetch": "node src/step1_fetch_live.js",
+      "step2": "node src/step2_filter_top_matches.js",
+      "step3": "node src/step3_fetch_match_details.js",
+      "step4": "node src/step4_extract_match_data.js",
+      "step5": "node src/step5_update_database.js",
+      "run:all": "npm run step2 && npm run step3 && npm run step4 && npm run step5"
+    },
+    "keywords": [
+      "dota",
+      "opendota",
+      "cosmetics",
+      "api"
+    ],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+      "axios": "^1.6.0"
+    }
+  }

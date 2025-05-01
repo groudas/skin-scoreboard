@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dota 2 Cosmetic Stats</title>
+    <!-- Include Plotly.js library -->
+    <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        #plotDiv { width: 95%; height: 600px; margin-top: 20px; }
+        label, button { margin-right: 10px; }
+        #controls { margin-bottom: 15px; }
+        #message { margin-top: 10px; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1>Dota 2 Cosmetic Popularity Over Time</h1>
+
+    <div id="controls">
+        <label for="jsonFile">Select 'daily_cosmetic_stats_marketable.json':</label>
+        <input type="file" id="jsonFile" accept=".json">
+        <!-- Updated message -->
+        <span id="message">Load file to generate chart. Only selected items shown initially.</span>
+    </div>
+
+    <!-- Div where the plot will be rendered -->
+    <div id="plotDiv"></div>
+
+    <script>
+        const fileInput = document.getElementById('jsonFile');
+        const plotDiv = document.getElementById('plotDiv');
+        const messageEl = document.getElementById('message');
+
+        fileInput.addEventListener('change', handleFileSelect, false);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                messageEl.textContent = 'No file selected.';
+                Plotly.purge(plotDiv);
+                return;
+            }
+            messageEl.textContent = `Loading ${file.name}...`;
+
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const jsonData = JSON.parse(e.target.result);
+                    if (!Array.isArray(jsonData)) {
+                         throw new Error("JSON data is not an array.");
+                    }
+                    messageEl.textContent = `Processing ${file.name}...`;
+                    plotData(jsonData);
+                     // Updated message after plotting
+                    messageEl.textContent = `Chart generated for ${file.name}. Default items shown. Click legend items to show/hide others. Drag on axes to zoom.`;
+                } catch (error) {
+                    console.error("Error reading or parsing JSON file:", error);
+                    messageEl.textContent = `Error processing file: ${error.message}`;
+                    Plotly.purge(plotDiv);
+                }
+            };
+
+             reader.onerror = function() {
+                 messageEl.textContent = `Error reading file: ${reader.error}`;
+                 Plotly.purge(plotDiv);
+             }
+
+            reader.readAsText(file);
+        }
+
+        function plotData(data) {
+             // --- *** START MODIFICATION *** ---
+             // Define the items you want visible by default (use exact names)
+            const defaultVisibleItems = [
+                "Genuine Weather Snow", // Example item 1
+                "Arcana Name Example"   // Example item 2 - Replace with your actual item names
+                // Add more item names here if needed
+            ];
+            const defaultVisibleSet = new Set(defaultVisibleItems); // Use a Set for faster lookups
+            // --- *** END MODIFICATION *** ---
+
+
+            // 1. Data Transformation (same as before)
+            const itemsData = {};
+            const allDates = new Set();
+            data.forEach(dailyEntry => {
+                if (!dailyEntry || !dailyEntry.date || !dailyEntry.items) return;
+                const parts = dailyEntry.date.split('/');
+                if (parts.length !== 3) return;
+                const currentDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                 if (isNaN(currentDate.getTime())) return;
+                const dateStringForPlotly = `${parts[2]}-${String(parts[1]).padStart(2,'0')}-${String(parts[0]).padStart(2,'0')}`;
+                allDates.add(dateStringForPlotly);
+                Object.entries(dailyEntry.items).forEach(([itemName, score]) => {
+                    if (!itemsData[itemName]) {
+                        itemsData[itemName] = { dates: [], scores: [] };
+                    }
+                    itemsData[itemName].dates.push(dateStringForPlotly);
+                    itemsData[itemName].scores.push(score);
+                });
+            });
+            const sortedDates = Array.from(allDates).sort();
+
+
+            // 2. Create Plotly Traces (with visibility logic)
+            const plotTraces = [];
+            Object.entries(itemsData).forEach(([itemName, itemInfo]) => {
+                const scoreMap = new Map();
+                for(let i = 0; i < itemInfo.dates.length; i++) {
+                    scoreMap.set(itemInfo.dates[i], itemInfo.scores[i]);
+                }
+                const alignedScores = sortedDates.map(date => scoreMap.get(date) || 0);
+
+                // --- *** START MODIFICATION *** ---
+                // Determine visibility based on the defaultVisibleSet
+                const isVisibleByDefault = defaultVisibleSet.has(itemName);
+                // --- *** END MODIFICATION *** ---
+
+                plotTraces.push({
+                    x: sortedDates,
+                    y: alignedScores,
+                    mode: 'lines+markers',
+                    type: 'scatter',
+                    name: itemName,
+                    marker: { size: 4 },
+                    // --- *** START MODIFICATION *** ---
+                    // Set visibility: 'legendonly' hides it but keeps it in the legend
+                    visible: isVisibleByDefault ? true : 'legendonly'
+                    // --- *** END MODIFICATION *** ---
+                });
+            });
+
+            // Sort traces alphabetically (same as before)
+            plotTraces.sort((a, b) => a.name.localeCompare(b.name));
+
+            // 3. Define Layout (same as before)
+            const layout = {
+                title: 'Daily Cosmetic "Score" (Spectators)',
+                xaxis: {
+                    title: 'Date',
+                    type: 'date',
+                },
+                yaxis: {
+                    title: 'Total Spectator Score',
+                    rangemode: 'tozero'
+                },
+                hovermode: 'closest',
+                 legend: {} // Default legend settings are usually fine
+            };
+
+            // 4. Generate Plot (same as before)
+            Plotly.newPlot(plotDiv, plotTraces, layout, {responsive: true});
+        }
+
+    </script>
+
+</body>
+</html>
