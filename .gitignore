@@ -92,7 +92,3 @@ web_modules/
 .env
 .env.*
 !.env.example
-
-# Output files
-/data/processed/ # Exemplo se você salvar dados processados aqui
-# Adicione outros arquivos/pastas que não devem ir pro Git

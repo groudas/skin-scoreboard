@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config').step2;
 const { log, ensureDirExists, readJsonFile, writeJsonFile } = require('./utils');
+const mongoose = require('mongoose');
+const DailyReport = require('./models/DailyReport');
 
 function getTimestampFromFilename(filename) {
     const match = filename.match(/live_data_(\d{8}_\d{6})\.json$/);
@@ -15,17 +17,19 @@ async function runStep2() {
         process.exit(1);
     }
 
-    log('info', `Raw Data Dir: ${config.rawDataDir}`);
-    log('info', `Output File: ${config.outputFile}`);
-
-    let allFilteredResults = readJsonFile(config.outputFile) || [];
-    if (!Array.isArray(allFilteredResults)) {
-        log('warn', `Existing output file ${config.outputFile} is not a valid JSON array. Starting fresh.`);
-        allFilteredResults = [];
+    try {
+        await mongoose.connect("mongodb://localhost:27017/skinscoreboard", {
+            serverSelectionTimeoutMS: 5000
+        });
+        log('info', 'MongoDB connection successful.');
+    } catch (error) {
+        log('error', 'MongoDB connection failed:', error.message);
+        process.exit(1);
     }
-    const existingTimestamps = new Set(allFilteredResults.map(item => item.timestamp));
-    log('info', `Loaded ${allFilteredResults.length} existing timestamp blocks. ${existingTimestamps.size} unique timestamps found.`);
 
+    log('info', `Raw Data Dir: ${config.rawDataDir}`);
+
+    log('info', 'Checking for existing timestamps in MongoDB...');
     let filesToProcess = [];
     try {
         const allFiles = fs.readdirSync(config.rawDataDir);
@@ -43,12 +47,11 @@ async function runStep2() {
 
     if (filesToProcess.length === 0) {
         log('info', "No new raw files found to process.");
-        if (!fs.existsSync(config.outputFile)) {
-            writeJsonFile(config.outputFile, []);
-        }
-        log('info', "Step 2 finished.");
+    log('info', "Step 2 finished.");
+        await mongoose.disconnect();
+        log('info', 'MongoDB connection closed.');
         return;
-    }
+}
 
     let newBlocksAdded = 0;
     let processedCount = 0;
@@ -67,15 +70,22 @@ async function runStep2() {
             continue;
         }
 
-        if (existingTimestamps.has(timestamp)) {
-            log('warn', `  -> Timestamp ${timestamp} already exists in output. Skipping processing but renaming file.`);
-            try {
-                fs.renameSync(currentFilePath, newFilePath);
-                log('info', `  -> Renamed to: ${path.basename(newFilePath)}`);
-            } catch (renameError) {
-                log('error', `  -> Failed to rename already processed file ${filename}:`, renameError.message);
+        try {
+            const existingReport = await DailyReport.findOne({ timestamp: timestamp });
+            if (existingReport) {
+                log('warn', `  -> Timestamp ${timestamp} already exists in database. Skipping processing but renaming file.`);
+                try {
+                    fs.renameSync(currentFilePath, newFilePath);
+                    log('info', `  -> Renamed to: ${path.basename(newFilePath)}`);
+                } catch (renameError) {
+                    log('error', `  -> Failed to rename already processed file ${filename}:`, renameError.message);
+                    errorCount++;
+                }
+                continue;
+            }
+        } catch (dbError) {
+            log('error', `  -> Database error checking for timestamp ${timestamp}:`, dbError.message);
             errorCount++;
-        }
             continue;
         }
 
@@ -91,7 +101,7 @@ async function runStep2() {
             log('warn', `  -> Content of ${filename} is not a JSON array. Skipping.`);
             errorCount++;
             continue;
-    }
+        }
 
         try {
             const sortedMatches = liveData
@@ -100,28 +110,43 @@ async function runStep2() {
 
             const topMatches = sortedMatches.slice(0, config.numberOfTopMatches);
 
-            const topMatchesFormatted = {};
+            const topMatchesFormatted = [];
             let validMatchesCount = 0;
             topMatches.forEach(match => {
                 if (typeof match.activate_time === 'number') {
-                    topMatchesFormatted[match.match_id.toString()] = [match.spectators, match.activate_time];
+                    topMatchesFormatted.push({
+                        matchId: match.match_id.toString(),
+                        spectators: match.spectators,
+                        activateTime: new Date(match.activate_time * 1000)
+                    });
                     validMatchesCount++;
-        } else {
+                } else {
                     log('warn', `  -> Match ${match.match_id} in ${filename} is missing 'activate_time'. Excluding from top matches for this timestamp.`);
-        }
+                }
             });
 
             if (validMatchesCount > 0) {
-                allFilteredResults.push({
-                    timestamp: timestamp,
-                    top_matches: topMatchesFormatted
-                });
-                existingTimestamps.add(timestamp);
-                newBlocksAdded++;
-                log('info', `  -> Added ${validMatchesCount} top matches for timestamp ${timestamp}.`);
-    } else {
+                try {
+                    const dailyReport = new DailyReport({
+                        timestamp: timestamp,
+                        matches: topMatchesFormatted.map(match => ({
+                            match_id: match.matchId,
+                            spectators: match.spectators,
+                            activateTime: match.activateTime
+                        })),
+                        items: new Map()
+                    });
+                    await dailyReport.save();
+                    newBlocksAdded++;
+                    log('info', `  -> Successfully saved ${validMatchesCount} top matches for timestamp ${timestamp} to database.`);
+                } catch (saveError) {
+                    log('error', `  -> Failed to save data for timestamp ${timestamp} to database:`, saveError.message);
+                    errorCount++;
+                    continue;
+                }
+            } else {
                 log('info', `  -> No valid top matches (with activate_time) found in ${filename}.`);
-    }
+            }
 
             fs.renameSync(currentFilePath, newFilePath);
             log('info', `  -> Renamed to: ${path.basename(newFilePath)}`);
@@ -133,24 +158,15 @@ async function runStep2() {
         }
     }
 
-    if (newBlocksAdded > 0) {
-        allFilteredResults.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        if (writeJsonFile(config.outputFile, allFilteredResults)) {
-            log('info', `\nSuccessfully updated ${config.outputFile} with ${newBlocksAdded} new timestamp blocks.`);
-        } else {
-             log('error', `\nFailed to write updated data to ${config.outputFile}.`);
-        }
-    } else {
-         log('info', `\nNo new data added to ${config.outputFile}.`);
-    }
-
     log('info', `\n--- Step 2 Summary ---`);
-    log('info', `Files processed: ${processedCount}`);
-    log('info', `New timestamp blocks added: ${newBlocksAdded}`);
-    log('info', `Files skipped/errored: ${errorCount + (filesToProcess.length - processedCount - errorCount)}`);
-    log('info', `Total blocks in output: ${allFilteredResults.length}`);
+    log('info', `Files successfully processed and data added to DB: ${newBlocksAdded}`);
+    log('info', `Files skipped (existing timestamp): ${processedCount - newBlocksAdded}`);
+    log('info', `Files with processing errors: ${errorCount}`);
     log('info', `----------------------`);
     log('info', "Step 2 finished.");
+
+    await mongoose.disconnect();
+    log('info', 'MongoDB connection closed.');
 }
 
 runStep2();
