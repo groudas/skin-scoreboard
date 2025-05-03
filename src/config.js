@@ -1,5 +1,7 @@
 const path = require('path');
 
+require('dotenv').config();
+
 const baseDataDir = path.join(__dirname, '..', 'data');
 
 module.exports = {
@@ -42,5 +44,14 @@ module.exports = {
         dbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats.json'),
         nonMarketableFile: path.join(__dirname, 'nonmarketable.txt'),
         filteredDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
+    },
+
+    mongodb: {
+        uri: process.env.MONGODB_URI || "mongodb://localhost:27017/skinscoreboard",
+    },
+
+    phase2: {
+        movingAverageDays: [3, 7],
+        processingTime: '0 2 * * *'
     }
 };

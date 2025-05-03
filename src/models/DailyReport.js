@@ -25,7 +25,6 @@ const dailyReportSchema = new mongoose.Schema({
     required: true,
     unique: true // Ensure only one report per exact timestamp
   },
-  // Store item counts using a Map where key is item name and value is count
   items: {
     type: Map,
     of: Number, // The values in the map are numbers (counts)

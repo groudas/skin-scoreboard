@@ -1,4 +1,3 @@
-// src/step1_fetch_live.js
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -27,19 +26,39 @@ async function fetchLiveData() {
         });
 
         if (response.status === 200 && response.data) {
-            const dataString = JSON.stringify(response.data, null, 2);
+            let rawData = response.data;
 
-            if (Array.isArray(response.data) && response.data.length > 0) {
-                fs.writeFileSync(outputFilePath, dataString);
-                log('info', `Success. Data saved to ${outputFilename}`);
-            } else if (Array.isArray(response.data) && response.data.length === 0) {
-                 fs.writeFileSync(outputFilePath, dataString);
-                 log('warn', `Saved file is an empty array. Server returned no live games? Saved to ${outputFilename}.`);
+            if (Array.isArray(rawData)) {
+                const validData = [];
+                let invalidCount = 0;
+                rawData.forEach((item, index) => {
+                    if (item && typeof item === 'object' && item !== null &&
+                        typeof item.match_id === 'number' &&
+                        typeof item.spectators === 'number' &&
+                        typeof item.activate_time === 'number') {
+                        validData.push(item);
+                    } else {
+                        log('warn', `  -> Invalid item format at index ${index} in live data array. Skipping. Item: ${JSON.stringify(item).substring(0, 200)}...`);
+                        invalidCount++;
+                    }
+                });
+
+                if (validData.length > 0) {
+                    const dataString = JSON.stringify(validData, null, 2);
+                    fs.writeFileSync(outputFilePath, dataString);
+                    log('info', `Success. Saved ${validData.length} valid items to ${outputFilename}. Skipped ${invalidCount} invalid items.`);
+                } else if (rawData.length > 0 && validData.length === 0) {
+                    log('warn', `Raw data array had ${rawData.length} items, but none were valid. Saving empty array. Check API response format. Saved to ${outputFilename}.`);
+                    fs.writeFileSync(outputFilePath, JSON.stringify([], null, 2));
+                } else {
+                    fs.writeFileSync(outputFilePath, JSON.stringify([], null, 2));
+                    log('warn', `Saved file is an empty array. Server returned no live games? Saved to ${outputFilename}.`);
+                }
             } else {
-                 fs.writeFileSync(outputFilePath, dataString);
-                 log('warn', `Saved file does not contain a JSON array as expected. Check API response format. Saved to ${outputFilename}.`);
+                const dataString = JSON.stringify(rawData, null, 2);
+                fs.writeFileSync(outputFilePath, dataString);
+                log('warn', `Saved file does not contain a JSON array as expected. Check API response format. Saved raw data to ${outputFilename}.`);
             }
-
         } else {
             log('error', `Request failed or returned unexpected status: ${response.status}`);
         }

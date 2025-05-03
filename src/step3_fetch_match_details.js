@@ -1,4 +1,3 @@
-// src/step3_fetch_match_details.js
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -29,7 +28,7 @@ async function fetchAndSaveMatch(matchId, outputFilePath) {
         if (error.response) {
             log('error', `  -> API Error for ${matchId}: Status ${error.response.status} - ${error.response.statusText}`);
             if (error.response.status === 404) {
-                log('warn', `  -> Match ${matchId} not found on OpenDota API (404).`);
+               log('warn', `  -> Match ${matchId} not found on OpenDota API (404).`);
                 return 'not_found';
             }
         } else if (error.request) {
@@ -40,7 +39,6 @@ async function fetchAndSaveMatch(matchId, outputFilePath) {
         return 'error';
     }
 }
-
 
 async function runStep3() {
     log('info', "Starting Step 3: Fetching Match Details...");

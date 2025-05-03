@@ -1,27 +1,28 @@
 {
-    "name": "dota-cosmetic-tracker",
+    "name": "skinscoreboard",
     "version": "1.0.0",
-    "description": "Tracks Dota 2 cosmetic popularity based on live game spectators.",
-    "main": "src/step1_fetch_live.js",
+    "description": "",
+    "main": "index.js",
     "scripts": {
-        "start:fetch": "node src/step1_fetch_live.js",
-        "step2": "node src/step2_filter_top_matches.js",
-        "step3": "node src/step3_fetch_match_details.js",
-        "step4": "node src/step4_extract_match_data.js",
-        "step5": "node src/step5_update_database.js",
-        "run:all": "npm run step2 && npm run step3 && npm run step4 && npm run step5"
+        "start": "node src/index.js",
+        "dev": "nodemon src/index.js",
+        "scrape:daily": "node scripts/scrapeDailyData.js",
+        "process:daily": "node scripts/processDailyData.js",
+        "scheduler": "node src/scheduler.js"
     },
-    "keywords": [
-        "dota",
-        "opendota",
-        "cosmetics",
-        "api"
-    ],
+    "keywords": [],
     "author": "",
     "license": "ISC",
     "dependencies": {
-        "axios": "^1.6.0",
-        "dotenv": "^16.5.0",
-        "mongoose": "^8.14.1"
+        "axios": "^1.6.8",
+        "cheerio": "^1.0.0-rc.12",
+        "dotenv": "^16.4.5",
+        "mongodb": "^6.5.0",
+        "mongoose": "^8.3.2",
+        "node-cron": "^3.0.3",
+        "winston": "^3.13.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.0"
     }
 }
