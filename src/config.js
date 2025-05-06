@@ -16,7 +16,7 @@ module.exports = {
         rawDataDir: path.join(baseDataDir, 'raw'),
         processedDir: path.join(baseDataDir, 'processed'),
         outputFile: path.join(baseDataDir, 'processed', 'filtered_live_matches.json'),
-        processedPrefix: 'processed_',
+        processedPrefix: 'filtered_live_matches',
         numberOfTopMatches: 15,
     },
 

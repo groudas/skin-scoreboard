@@ -1,3 +1,8 @@
+const { log, readJsonFile, writeJsonFile, ensureDirExists } = require('./utils');
+const fs = require('fs').promises;
+const path = require('path');
+const config = require(path.join(__dirname, 'config.js')).step2;
+
 async function getTimestampFromFilename(filename) {
     return filename.slice(13, 21);
 }
@@ -15,7 +20,7 @@ async function renameFile(currentFilePath, newFilePath) {
 async function processJsonFile(currentFilePath, filename) {
     let jsonFile;
         try {
-        jsonFile = readJsonFile(currentFilePath);
+    jsonFile = await readJsonFile(currentFilePath);
         } catch (processingError) {
             log('error', `  -> Error processing data inside ${filename}:`, processingError.message);
         throw processingError;
@@ -30,7 +35,6 @@ async function processJsonFile(currentFilePath, filename) {
 async function filterTopMatches(filename, existingTimestamps, config) {
     const currentFilePath = path.join(config.rawDataDir, filename);
     const newFilePath = path.join(config.rawDataDir, `${config.processedPrefix}${filename}`);
-
     const timestamp = getTimestampFromFilename(filename);
 
     if (!timestamp) {
@@ -38,7 +42,7 @@ async function filterTopMatches(filename, existingTimestamps, config) {
         return { error: true, message: `Could not extract timestamp from ${filename}` };
     }
 
-    if (existingTimestamps.has(timestamp)) {
+  if (existingTimestamps[timestamp]) {
         log('warn', `  -> Timestamp ${timestamp} already exists in output. Skipping processing but renaming file.`);
         await renameFile(currentFilePath, newFilePath);
         return { skipped: true, renamed: true, timestamp: timestamp };
@@ -46,14 +50,16 @@ async function filterTopMatches(filename, existingTimestamps, config) {
 
     let liveData;
     try {
-        liveData = processJsonFile(currentFilePath, filename);
+    liveData = await processJsonFile(currentFilePath, filename);
     } catch (fileProcessingError) {
         log('error', fileProcessingError.message);
-        return { error: true, message: fileProcessingError.message };
+    return { success: false, error: true, message: fileProcessingError.message };
     }
-    if (liveData.error) {
-        return { success: false, error: liveData.error, message: liveData.message };
+  if (liveData && liveData.error) {
+    log('error', `  -> Skipping file due to content error: ${liveData.message}`);
+    return { success: false, error: true, message: liveData.message };
     }
+
     try {
         const sortedMatches = liveData
             .filter(match => match && typeof match.spectators === 'number' && match.match_id)
@@ -80,7 +86,6 @@ async function filterTopMatches(filename, existingTimestamps, config) {
             log('info', `  -> No valid top matches (with activate_time) found in ${filename}.`);
             return { success: false, timestamp: timestamp, validMatchesCount: 0 };
     }
-
     } catch (processingError) {
         log('error', `  -> Error processing data inside ${filename}:`, processingError.message);
         throw processingError;
@@ -89,98 +94,79 @@ async function filterTopMatches(filename, existingTimestamps, config) {
 
 async function runStep2() {
     log('info', `Starting Step 2: Filtering Top ${config.numberOfTopMatches} Matches...`);
-    if (!ensureDirExists(config.rawDataDir) || !ensureDirExists(config.processedDir)) {
-        log('error', 'Input or output directory cannot be created/accessed. Exiting.');
-        process.exit(1);
-    }
 
+  // Ensure the processed directory exists
+  await ensureDirExists(config.processedDir);
     log('info', `Raw Data Dir: ${config.rawDataDir}`);
     log('info', `Output File: ${config.outputFile}`);
 
-    let allFilteredResults = readJsonFile(config.outputFile) || [];
-    if (!Array.isArray(allFilteredResults)) {
-        log('warn', `Existing output file ${config.outputFile} is not a valid JSON array. Starting fresh.`);
-        allFilteredResults = [];
+  // Load existing processed data to avoid reprocessing timestamps
+  const existingProcessedData = await readJsonFile(config.outputFile);
+  const existingTimestamps = {};
+  if (existingProcessedData && Array.isArray(existingProcessedData.data)) {
+    existingProcessedData.data.forEach(block => {
+      if (block.timestamp) {
+        existingTimestamps[block.timestamp] = true;
     }
-    const existingTimestamps = new Set(allFilteredResults.map(item => item.timestamp));
-    log('info', `Loaded ${allFilteredResults.length} existing timestamp blocks. ${existingTimestamps.size} unique timestamps found.`);
+    });
+  }
+  log('info', `Loaded ${existingProcessedData ? (existingProcessedData.data ? existingProcessedData.data.length : 0) : 0} existing timestamp blocks. ${Object.keys(existingTimestamps).length} unique timestamps found.`);
+  const rawFiles = await fs.readdir(config.rawDataDir);
+  log('info', `Found ${rawFiles.length} raw data files.`);
 
-    let filesToProcess = [];
-    try {
-        const allFiles = fs.readdirSync(config.rawDataDir);
-        filesToProcess = allFiles
-            .filter(file =>
-                /^live_data_\d{8}_\d{6}\.json$/.test(file) &&
-                !fs.existsSync(path.join(config.rawDataDir, `${config.processedPrefix}${file}`))
-            )
-            .sort();
-        log('info', `Found ${filesToProcess.length} new raw data files to process.`);
-    } catch (error) {
-        log('error', `Failed to read raw data directory ${config.rawDataDir}:`, error.message);
-        process.exit(1);
+  // Filter files that need processing using a loop to handle await
+  const newFiles = [];
+  for (const file of rawFiles) {
+    if (file.startsWith('live_data_') && file.endsWith('.json')) {
+      const processedFilePath = path.join(config.rawDataDir, `${config.processedPrefix}${file}`);
+            let alreadyProcessed = false;
+            try {
+                // Use fs.access to check if the processed file exists
+                await fs.access(processedFilePath);
+                alreadyProcessed = true; // If access succeeds, the file exists
+            } catch (error) {
+                // If fs.access throws, the file doesn't exist or is not accessible
+                alreadyProcessed = false;
+      }
+
+            // Check if the file has *not* already been processed and renamed/moved
+            if (!alreadyProcessed) {
+                newFiles.push(file);
+    }
+  }
     }
 
-    if (filesToProcess.length === 0) {
-        log('info', "No new raw files found to process.");
-        if (!fs.existsSync(config.outputFile)) {
-            writeJsonFile(config.outputFile, []);
-        }
-    log('info', "Step 2 finished.");
-        return;
-}
-    let newBlocksAdded = 0;
-    let processedCount = 0;
-    let errorCount = 0;
-    let skippedCount = 0;
+  log('info', `Found ${newFiles.length} new raw data files to process.`);
 
-    for (const filename of filesToProcess) {
-        log('info', `\nProcessing file: ${filename}`);
-        const result = await filterTopMatches(filename, existingTimestamps, config);
-
-        if (result.success) {
-            if (result.validMatchesCount > 0) {
-                allFilteredResults.push({
-                    timestamp: result.timestamp,
-                    top_matches: result.topMatches
-                });
-                existingTimestamps.add(result.timestamp);
-                newBlocksAdded++;
-                processedCount++;
-        } else {
-                processedCount++;
-        }
-            if (result.error || !result.renamed) {
-                errorCount++;
+  if (newFiles.length === 0) {
+    log('info', 'No new files to process. Step 2 finished.');
+    return; // Exit if no new files
     }
-        } else if (result.skipped) {
-            skippedCount++;
-            if (result.error || !result.renamed) {
-                errorCount++;
+
+  const processedBlocks = [];
+  for (const file of newFiles) {
+    log('info', `\nProcessing file: ${file}`);
+    const result = await filterTopMatches(file, existingTimestamps, config);
+
+    if (result.success && result.topMatches) {
+      processedBlocks.push({ timestamp: result.timestamp, top_matches: result.topMatches, validMatchesCount: result.validMatchesCount });
+            } else {
+      log('error', `  -> Skipping file ${file} due to processing error or no data.`);
             }
-        } else if (result.error) {
-            errorCount++;
+            }
+
+  // Combine new processed blocks with existing data
+  let finalData = { data: [] };
+  if (existingProcessedData && Array.isArray(existingProcessedData.data)) {
+    finalData.data = existingProcessedData.data;
         }
+  finalData.data = finalData.data.concat(processedBlocks);
 
-        log('info', `  -> Finished processing ${filename}. Result: ${result.success ? 'Success' : result.skipped ? 'Skipped' : 'Error'}. ${result.message || ''}`);
+  // Write the combined data back to the processed file
+  await writeJsonFile(config.outputFile, finalData);
+
+  log('info', 'Step 2: Filtering Top Matches completed.');
     }
-
-    allFilteredResults.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-    if (writeJsonFile(config.outputFile, allFilteredResults)) {
-        log('info', `\nSuccessfully updated ${config.outputFile} with ${newBlocksAdded} new timestamp blocks.`);
-    } else {
-        log('error', `\nFailed to write updated data to ${config.outputFile}.`);
-    }
-
-    log('info', `\n--- Step 2 Summary ---`);
-    log('info', `Files found for processing: ${filesToProcess.length}`);
-    log('info', `Files processed successfully (data extracted): ${processedCount}`);
-    log('info', `Files skipped (timestamp already exists): ${skippedCount}`);
-    log('info', `Files with errors: ${errorCount}`);
-    log('info', `New timestamp blocks added to output: ${newBlocksAdded}`);
-    log('info', `Total blocks in output file: ${allFilteredResults.length}`);
-    log('info', `----------------------`);
-    log('info', "Step 2 finished.");
-}
 
 runStep2();
+

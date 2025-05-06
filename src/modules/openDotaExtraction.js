@@ -1,4 +1,27 @@
-async function processOpenDotaData(filteredMatchIds, config, matchMap) {
+// Import utility functions from src/utils
+const { log, ensureDirExists, readJsonFile, writeJsonFile, formatDate } = require('../utils');
+
+// Import database functions from src/step5_update_database.js
+const {
+  loadDatabase,
+  removeOldContribution,
+  addNewContribution
+} = require('../step5_update_database');
+
+// NOTE: The function 'extractMatchData' called within processOpenDotaData
+// was not found in the codebase. Please ensure it is defined or imported correctly.
+// Example: const { extractMatchData } = require('./path/to/extractMatchData');
+
+/**
+ * Process OpenDota data for a given set of filtered match IDs.
+ *
+ * @param {string[]} filteredMatchIds - IDs of matches to process.
+ * @param {Object} config - Configuration object.
+ * @param {Map<string, Object>} matchMap - Map of match data.
+ * @param {Object} dailyCosmeticStats - Daily cosmetic stats. (Note: This parameter is declared but not used in the current logic)
+ * @param {Set<string>} nonMarketableItems - Non-marketable items.
+ */
+async function processOpenDotaData(filteredMatchIds, config, matchMap, dailyCosmeticStats, nonMarketableItems) {
   try {
     if (!Array.isArray(filteredMatchIds) || filteredMatchIds.length === 0) {
       log('warn', 'Received empty or invalid filteredMatchIds array. Nothing to process.');
@@ -12,21 +35,21 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
 
     let processedMatchesMap = new Map();
     let dbMap = new Map();
-    let nonMarketableSet = new Set();
+    let nonMarketableSet = nonMarketableItems; // Reuse the provided nonMarketableItems set
 
+    // Load existing processed matches and database into maps/sets
     loadDatabase(processedMatchesMap, dbMap, nonMarketableSet, config);
-    log('info', 'Starting Step 2: Fetching Community Posts...');
-    const communityPostsFetchResults = await fetchCommunityPosts(filteredMatchIds, config);
-    log('info', `Step 2 completed. Fetched: ${communityPostsFetchResults.fetchedCount}, Failed: ${communityPostsFetchResults.failedCount}..`);
 
+    // NOTE: matchDetailsDir and filteredMatchesDir are declared but not used in the current logic.
     const matchDetailsDir = config.matchDetailsDir;
     const filteredMatchesDir = config.filteredMatchesDir;
-    let fetchedCount = 0;
-    let errorCountStep3 = 0;
-    let processedNewCount = 0;
-    let processedUpdateCount = 0;
-    let skippedCount = 0;
-    let errorCountStep5 = 0;
+
+    let fetchedCount = 0; // Note: This counter seems to be incremented regardless of success in the loop below.
+    let errorCountStep3 = 0; // Error fetching/basic validation
+    let processedNewCount = 0; // Successfully added as new
+    let processedUpdateCount = 0; // Successfully added as update
+    let skippedCount = 0; // Skipped (already processed, no update)
+    let errorCountStep5 = 0; // Errors during DB manipulation/saving later
 
     for (const currentMatchId of filteredMatchIds) {
       const currentMatchData = matchMap.get(currentMatchId);
@@ -60,11 +83,11 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
           log('info', `  -> Treating match ${currentMatchId} as new due to invalid previous entry date format.`);
           shouldProcess = true;
           isUpdate = false;
-          // Do NOT call removeOldContribution if previousEntry date is invalid
         } else if (currentMatch.spectators > previousEntry.spectators) {
           log('info', `  -> Update detected for match ${currentMatchId}: New spectators (${currentMatch.spectators}) > Old (${previousEntry.spectators}).`);
-        shouldProcess = true;
+          shouldProcess = true;
           isUpdate = true;
+          // Assuming currentMatch.cosmetics contains the cosmetic data for removeOldContribution
           removeOldContribution(currentMatchId, previousEntry.date, previousEntry.spectators, currentMatch.cosmetics, dbMap);
         } else {
           log('info', `  -> Skipping: Match ${currentMatchId} already processed with ${previousEntry.spectators} spectators (>= current ${currentMatch.spectators}).`);
@@ -77,31 +100,56 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
       }
 
       if (shouldProcess) {
-    try {
-          const cosmetics = Array.isArray(currentMatch.cosmetics) ? currentMatch.cosmetics : [];
+        // Process the match data and add/update to the database maps
+        try {
+          // Assuming currentMatch.cosmetics contains the cosmetic data needed by addNewContribution
+          const cosmetics = currentMatch.cosmetics; // Get cosmetics from the current match data
+
+          if (!cosmetics) {
+               log('warn', `  -> Skipping processing for match ${currentMatchId}: No cosmetic data found.`);
+               errorCountStep3++; // Count this as a processing error for step 3
+               continue; // Skip adding this match
+          }
+
           addNewContribution(currentMatchId, currentDate, currentMatch.spectators, cosmetics, dbMap);
-          processedMatchesMap.set(currentMatchId, { date: currentDate, spectators: currentMatch.spectators });
+          processedMatchesMap.set(currentMatchId, { date: currentDate, spectators: currentMatch.spectators }); // Update processed map
+
           if (isUpdate) {
             processedUpdateCount++;
-      } else {
+          } else {
             processedNewCount++;
-      }
-          fetchedCount++;
+          }
+          fetchedCount++; // Increment fetchedCount for processed matches
         } catch (addContributionError) {
-          log('error', `  -> Error adding contribution for match ${currentMatchId}: ${addContributionError.message}`);
-          errorCountStep3++;
-    }
+          log('error', `  -> Error adding/updating contribution for match ${currentMatchId}: ${addContributionError.message}`);
+          errorCountStep3++; // Count this as a processing error for step 3
+        }
       }
-      // If not shouldProcess, it's skipped, already counted
     }
 
     log('info', `Step 3: Match details processing completed. Processed New: ${processedNewCount}, Processed Updates: ${processedUpdateCount}, Skipped: ${skippedCount}, Errors: ${errorCountStep3}.`);
 
+    // NOTE: The call to extractMatchData is still present here.
+    // This function is not defined in the provided code snippet or imported.
+    // You will need to ensure 'extractMatchData' is correctly defined or imported
+    // if this step is still intended.
     log('info', 'Starting Step 4: Extracting and Filtering Match Data...');
-    const step4ExtractionResults = await extractMatchData(filteredMatchIds, config);
-    log('info', `Step 4 completed. Processed: ${step4ExtractionResults.processedCount}, Filtered: ${step4ExtractionResults.filteredCount}, Errors: ${step4ExtractionResults.errorCount}.`);
-    errorCountStep5 += step4ExtractionResults.errorCount;
-
+    // As extractMatchData is undefined based on our current view,
+    // I will add a placeholder result to prevent the script from crashing,
+    // but you MUST replace this with the actual call or remove this step
+    // if it's no longer needed.
+    let step4ExtractionResults = { processedCount: 0, filteredCount: 0, errorCount: 0 };
+    try {
+       // IMPORTANT: Replace the following line with the actual call to extractMatchData
+       // if that function exists and is needed. If not, remove this try/catch block.
+       // step4ExtractionResults = await extractMatchData(filteredMatchIds, config);
+       log('warn', 'Placeholder for extractMatchData called. Function not defined/imported.');
+    } catch(e) {
+       log('error', `Error calling extractMatchData (placeholder): ${e.message}`);
+       step4ExtractionResults.errorCount++;
+    }
+    log('info', 'Step 4 completed. Processed: ${step4ExtractionResults.processedCount}, Filtered: ${step4ExtractionResults.filteredCount}, Errors: ${step4ExtractionResults.errorCount}.');
+    errorCountStep5 += step4ExtractionResults.errorCount; // Add Step 4 errors to Step 5 total
     log('info', '\nPreparing original database data...');
     let finalDbData = [];
     try {
@@ -109,23 +157,26 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
         const dateA = a.date.split('/').reverse().join(''); // Converts MM/DD/YYYY to YYYYDDMM
         const dateB = b.date.split('/').reverse().join(''); // Converts MM/DD/YYYY to YYYYDDMM
         if (dateA === dateB) {
+          // Sort by number of items for deterministic output on the same day
           return Object.keys(a.items || {}).length - Object.keys(b.items || {}).length;
         }
         return dateA.localeCompare(dateB);
       });
 
+      // Ensure items and matches properties exist and sort items alphabetically
       finalDbData.forEach(day => {
         if (day.items) {
           const sortedItems = {};
           if (typeof day.items === 'object' && day.items !== null) {
             Object.keys(day.items).sort().forEach(key => {
+              // Only include items with score > 0 in the final output
               if (day.items[key] > 0) {
                 sortedItems[key] = day.items[key];
               }
             });
             day.items = sortedItems;
           } else {
-            log('warn', `Items data for date ${day.date} is not an object.`);
+            log('warn', `Items data for date ${day.date} in original DB is not an object.`);
             day.items = {}; // Reset to empty object if invalid
             errorCountStep5++;
           }
@@ -135,13 +186,16 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
         if (Array.isArray(day.matches)) {
           day.matches.sort((a, b) => String(a.match_id).localeCompare(String(b.match_id)));
         } else {
+          // This shouldn't happen if addNewContribution works correctly, but ensure it's an array
+          log('warn', `Matches data for date ${day.date} in original DB is not an array.`);
           day.matches = []; // Ensure matches property exists as array
+          errorCountStep5++;
         }
       });
 
       log('info', `Final original database data prepared with ${finalDbData.length} date entries.`);
     } catch (sortError) {
-      log('error', `Error preparing final database array: ${sortError.message}`);
+      log('error', `Error preparing final original database array: ${sortError.message}`);
       errorCountStep5++;
     }
 
@@ -169,6 +223,7 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
         let hasMarketableItems = false;
         if (dayData.items && typeof dayData.items === 'object' && dayData.items !== null) {
           for (const [item, score] of Object.entries(dayData.items)) {
+            // Check if item is not in the nonMarketableSet and has a score > 0
             if (!nonMarketableSet.has(item) && score > 0) {
               filteredItems[item] = score;
               hasMarketableItems = true;
@@ -178,11 +233,14 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
           log('warn', `Items data for date ${date} is missing or not an object for filtered DB preparation.`);
           // Don't increment errorCount here, it's handled during original prep/sort
         }
+        // Only add the day to the filtered DB if it contains at least one marketable item
         if (hasMarketableItems) {
-          const filteredDayData = { ...dayData, items: filteredItems };
+          const filteredDayData = { date: dayData.date, spectators: dayData.spectators, items: filteredItems, matches: Array.isArray(dayData.matches) ? dayData.matches : [] };
           // Ensure matches property exists as array for filtered data too
           if (!Array.isArray(filteredDayData.matches)) {
-            filteredDayData.matches = [];
+             log('warn', `Matches data for date ${date} in filtered DB prep is not an array.`);
+             filteredDayData.matches = []; // Ensure matches property exists as array
+             errorCountStep5++;
           }
           filteredDbMap.set(date, filteredDayData);
         }
@@ -192,33 +250,39 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
         const dateA = a.date.split('/').reverse().join(''); // Converts MM/DD/YYYY to YYYYDDMM
         const dateB = b.date.split('/').reverse().join(''); // Converts MM/DD/YYYY to YYYYDDMM
         if (dateA === dateB) {
+           // Sort by number of items for deterministic output on the same day
           return Object.keys(a.items || {}).length - Object.keys(b.items || {}).length;
         }
         return dateA.localeCompare(dateB);
       });
 
+      // Ensure items and matches properties exist and sort items alphabetically for filtered DB
       finalFilteredDbData.forEach(day => {
         if (day.items) {
           const sortedItems = {};
           if (typeof day.items === 'object' && day.items !== null) {
             Object.keys(day.items).sort().forEach(key => {
+               // This check was already done when creating filteredItems, but good practice
               if (day.items[key] > 0) {
                 sortedItems[key] = day.items[key];
               }
             });
             day.items = sortedItems;
           } else {
-            log('warn', `Items data for date ${day.date} is not an object.`);
+            log('warn', `Items data for date ${day.date} in filtered DB is not an object.`);
             day.items = {}; // Reset to empty object if invalid
             errorCountStep5++;
           }
         } else {
           day.items = {}; // Ensure items property exists as object
         }
-        if (Array.isArray(day.matches)) {
+         if (Array.isArray(day.matches)) {
           day.matches.sort((a, b) => String(a.match_id).localeCompare(String(b.match_id)));
         } else {
+          // This shouldn't happen based on the prep logic, but ensure it's an array
+           log('warn', `Matches data for date ${day.date} in filtered DB is not an array.`);
           day.matches = []; // Ensure matches property exists as array
+          errorCountStep5++;
         }
       });
 
@@ -228,7 +292,7 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
       errorCountStep5++;
     }
 
-    log('info', 'Saving filtered database...');
+    log('info', 'Saving filtered database...');S
     let filteredDbSavedSuccessfully = false;
     try {
       if (writeJsonFile(config.filteredDbFilePath, finalFilteredDbData)) {
@@ -245,36 +309,5 @@ async function processOpenDotaData(filteredMatchIds, config, matchMap) {
 
     // Final Summary Logs
     log('info', '\n--- OpenDota Data Processing Summary ---');
-    log('info', `Step 2 (Community Posts): Fetched: ${communityPostsFetchResults.fetchedCount}, Failed: ${communityPostsFetchResults.failedCount}`);
-    log('info', `Step 3 (Fetch Details): Fetched/Already Existed: ${fetchedCount}, Failed: ${errorCountStep3}`);
-    log('info', `Step 4 (Extract/Filter): Processed: ${step4ExtractionResults.processedCount}, Filtered: ${step4ExtractionResults.filteredCount}, Errors: ${step4ExtractionResults.errorCount}`);
-    log('info', `Step 5 (DB Update): Processed New: ${processedNewCount}, Processed Updates: ${processedUpdateCount}, Skipped: ${skippedCount}, Errors: ${errorCountStep5}`);
-    log('info', `Database Files Saved: Original: ${dbSavedSuccessfully ? 'Yes' : 'No'}, Filtered: ${filteredDbSavedSuccessfully ? 'Yes' : 'No'}`);
-    log('info', '---------------------------------------');
-    log('info', "OpenDota Data Processing (Steps 2-5) finished.");
-
-    return {
-      success: (errorCountStep3 + step4ExtractionResults.errorCount + errorCountStep5) === 0 && dbSavedSuccessfully && filteredDbSavedSuccessfully,
-      step2: communityPostsFetchResults,
-      step3: { fetchedCount, failedCount: errorCountStep3 },
-      step4: step4ExtractionResults,
-      step5: { processedNewCount, processedUpdateCount, skippedCount, errorCount: errorCountStep5, dbSaved: dbSavedSuccessfully, filteredDbSaved: filteredDbSavedSuccessfully }
-    };
-  } catch (catchAllError) {
-    log('error', `Caught unexpected error during processing: ${catchAllError.message}`, catchAllError);
-    // Return a consistent error structure
-    return {
-      success: false,
-      error: catchAllError.message,
-      step2: { fetchedCount: 0, failedCount: 0 },
-      step3: { fetchedCount: 0, failedCount: 0 },
-      step4: { processedCount: 0, filteredCount: 0, errorCount: 0 },
-      step5: { processedNewCount: 0, processedUpdateCount: 0, skippedCount: 0, errorCount: 0, dbSaved: false, filteredDbSaved: false }
-    };
-  }
-}
-
-module.exports = {
-  processOpenDotaData
-};
-
+    log('info', `Step 3 (Process Details): Processed New: ${processedNewCount}, Processed Updates: ${processedUpdateCount}, Skipped: ${skippedCount}, Errors: ${errorCountStep3}`);
+    log('info', `Step 4 (Extract/Filter): Processed: ${step4ExtractionResults.processedCount}, Filtered`);
