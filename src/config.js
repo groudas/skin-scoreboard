@@ -1,6 +1,6 @@
 const path = require('path');
 
-const baseDataDir = path.join(__dirname, '..', 'data');
+const baseDataDir = path.join(__dirname,'..', 'data');
 
 module.exports = {
     logLevel: 'info',
@@ -40,7 +40,7 @@ module.exports = {
         filteredMatchesDir: path.join(baseDataDir, 'filtered_matches'),
         dbDir: path.join(baseDataDir, 'database'),
         dbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats.json'),
-        nonMarketableFile: path.join(__dirname, 'nonmarketable.txt'),
+        nonMarketableFile: path.join(__dirname, 'module1', 'nonmarketable.txt'),
         filteredDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
     }
 };
