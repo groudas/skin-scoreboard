@@ -57,12 +57,7 @@ jspm_packages/
 web_modules/
 
 # VSCode settings specific to user
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
+.vscode/
 
 # Optional npm cache directory
 .npm
