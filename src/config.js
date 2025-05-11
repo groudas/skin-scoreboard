@@ -1,8 +1,14 @@
-const path = require('path');
+// ../config.js (assuming it's in the 'src' directory, one level up from 'src/module2')
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const baseDataDir = path.join(__dirname,'..', 'data');
+// Replicate __dirname and __filename for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-module.exports = {
+const baseDataDir = path.join(__dirname, '..', 'data'); // If config.js is in src/, __dirname is .../src, so '..' goes to project root.
+
+const config = {
     logLevel: 'info',
     step1: {
         targetUrl: 'https://api.opendota.com/api/live',
@@ -11,7 +17,6 @@ module.exports = {
         fileExt: '.json',
         requestTimeoutMs: 10000,
     },
-
     step2: {
         rawDataDir: path.join(baseDataDir, 'raw'),
         processedDir: path.join(baseDataDir, 'processed'),
@@ -19,7 +24,6 @@ module.exports = {
         processedPrefix: 'filtered_live_matches',
         numberOfTopMatches: 15,
     },
-
     step3: {
         filteredMatchesFile: path.join(baseDataDir, 'processed', 'filtered_live_matches.json'),
         outputDir: path.join(baseDataDir, 'matches'),
@@ -28,19 +32,26 @@ module.exports = {
         requestTimeoutMs: 30000,
         minimumMatchAgeHours: 3,
     },
-
     step4: {
         matchesDir: path.join(baseDataDir, 'matches'),
         filteredLiveFile: path.join(baseDataDir, 'processed', 'filtered_live_matches.json'),
         outputDir: path.join(baseDataDir, 'filtered_matches'),
         processedFlagFile: '.processed_step4',
     },
-
     step5: {
         filteredMatchesDir: path.join(baseDataDir, 'filtered_matches'),
         dbDir: path.join(baseDataDir, 'database'),
         dbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats.json'),
+        // This path assumes nonmarketable.txt is in src/module1/ if config.js is in src/
         nonMarketableFile: path.join(__dirname, 'module1', 'nonmarketable.txt'),
         filteredDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
+    },
+    module2: {
+        priceDbDir: path.join(baseDataDir, 'database'),
+        priceDbFile: path.join(baseDataDir, 'database', 'priceDB.json'),
+        itemsDbDir: path.join(baseDataDir, 'database'),
+        itemsDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
     }
 };
+
+export default config;
