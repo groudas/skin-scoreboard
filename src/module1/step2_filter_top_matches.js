@@ -1,7 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const config = require('../config').step2;
-const { log, ensureDirExists, readJsonFile, writeJsonFile } = require('../utils');
+import fs from 'fs';
+import path from 'path';
+import config from '../config.js';
+import { log, ensureDirExists, readJsonFile, writeJsonFile } from '../utils.js';
 
 function getTimestampFromFilename(filename) {
     const match = filename.match(/live_data_(\d{8}_\d{6})\.json$/);
@@ -9,18 +9,18 @@ function getTimestampFromFilename(filename) {
 }
 
 async function runStep2() {
-    log('info', `Starting Step 2: Filtering Top ${config.numberOfTopMatches} Matches...`);
-    if (!ensureDirExists(config.rawDataDir) || !ensureDirExists(config.processedDir)) {
+    log('info', `Starting Step 2: Filtering Top ${config.step2.numberOfTopMatches} Matches...`);
+    if (!ensureDirExists(config.step2.rawDataDir) || !ensureDirExists(config.step2.processedDir)) {
         log('error', 'Input or output directory cannot be created/accessed. Exiting.');
         process.exit(1);
     }
 
-    log('info', `Raw Data Dir: ${config.rawDataDir}`);
-    log('info', `Output File: ${config.outputFile}`);
+    log('info', `Raw Data Dir: ${config.step2.rawDataDir}`);
+    log('info', `Output File: ${config.step2.outputFile}`);
 
-    let allFilteredResults = readJsonFile(config.outputFile) || [];
+    let allFilteredResults = readJsonFile(config.step2.outputFile) || [];
     if (!Array.isArray(allFilteredResults)) {
-        log('warn', `Existing output file ${config.outputFile} is not a valid JSON array. Starting fresh.`);
+        log('warn', `Existing output file ${config.step2.outputFile} is not a valid JSON array. Starting fresh.`);
         allFilteredResults = [];
     }
     const existingTimestamps = new Set(allFilteredResults.map(item => item.timestamp));
@@ -28,23 +28,23 @@ async function runStep2() {
 
     let filesToProcess = [];
     try {
-        const allFiles = fs.readdirSync(config.rawDataDir);
+        const allFiles = fs.readdirSync(config.step2.rawDataDir);
         filesToProcess = allFiles
             .filter(file =>
                 /^live_data_\d{8}_\d{6}\.json$/.test(file) &&
-                !fs.existsSync(path.join(config.rawDataDir, `${config.processedPrefix}${file}`))
+                !fs.existsSync(path.join(config.step2.rawDataDir, `${config.step2.processedPrefix}${file}`))
             )
             .sort();
         log('info', `Found ${filesToProcess.length} new raw data files to process.`);
     } catch (error) {
-        log('error', `Failed to read raw data directory ${config.rawDataDir}:`, error.message);
+        log('error', `Failed to read raw data directory ${config.step2.rawDataDir}:`, error.message);
         process.exit(1);
     }
 
     if (filesToProcess.length === 0) {
         log('info', "No new raw files found to process.");
-        if (!fs.existsSync(config.outputFile)) {
-            writeJsonFile(config.outputFile, []);
+        if (!fs.existsSync(config.step2.outputFile)) {
+            writeJsonFile(config.step2.outputFile, []);
         }
         log('info', "Step 2 finished.");
         return;
@@ -55,8 +55,8 @@ async function runStep2() {
     let errorCount = 0;
 
     for (const filename of filesToProcess) {
-        const currentFilePath = path.join(config.rawDataDir, filename);
-        const newFilePath = path.join(config.rawDataDir, `${config.processedPrefix}${filename}`);
+        const currentFilePath = path.join(config.step2.rawDataDir, filename);
+        const newFilePath = path.join(config.step2.rawDataDir, `${config.step2.processedPrefix}${filename}`);
         const timestamp = getTimestampFromFilename(filename);
 
         log('info', `\nProcessing file: ${filename}`);
@@ -98,7 +98,7 @@ async function runStep2() {
                 .filter(match => match && typeof match.spectators === 'number' && match.match_id)
                 .sort((a, b) => b.spectators - a.spectators);
 
-            const topMatches = sortedMatches.slice(0, config.numberOfTopMatches);
+            const topMatches = sortedMatches.slice(0, config.step2.numberOfTopMatches);
 
             const topMatchesFormatted = {};
             let validMatchesCount = 0;
@@ -135,13 +135,13 @@ async function runStep2() {
 
     if (newBlocksAdded > 0) {
         allFilteredResults.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        if (writeJsonFile(config.outputFile, allFilteredResults)) {
-            log('info', `\nSuccessfully updated ${config.outputFile} with ${newBlocksAdded} new timestamp blocks.`);
+        if (writeJsonFile(config.step2.outputFile, allFilteredResults)) {
+            log('info', `\nSuccessfully updated ${config.step2.outputFile} with ${newBlocksAdded} new timestamp blocks.`);
         } else {
-             log('error', `\nFailed to write updated data to ${config.outputFile}.`);
+             log('error', `\nFailed to write updated data to ${config.step2.outputFile}.`);
         }
     } else {
-         log('info', `\nNo new data added to ${config.outputFile}.`);
+         log('info', `\nNo new data added to ${config.step2.outputFile}.`);
     }
 
     log('info', `\n--- Step 2 Summary ---`);
