@@ -1,10 +1,9 @@
-// src/utils.js
-const fs = require('fs');
-const path = require('path');
-const config = require('./config');
+import fs from 'fs';
+import path from 'path';
+import configModule from './config.js';
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const currentLogLevel = LOG_LEVELS[config.logLevel] ?? LOG_LEVELS.info;
+const currentLogLevel = LOG_LEVELS[configModule.logLevel] ?? LOG_LEVELS.info;
 
 function log(level, message, ...args) {
     if (LOG_LEVELS[level] >= currentLogLevel) {
@@ -79,8 +78,7 @@ function writeJsonFile(filePath, data) {
     }
 }
 
-
-module.exports = {
+export {
     log,
     ensureDirExists,
     sleep,

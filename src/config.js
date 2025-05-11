@@ -13,6 +13,7 @@ const config = {
     step1: {
         targetUrl: 'https://api.opendota.com/api/live',
         outputDir: path.join(baseDataDir, 'raw'),
+        filenamePrefix: 'live_data',
         intervalSeconds: 900,
         fileExt: '.json',
         requestTimeoutMs: 10000,
