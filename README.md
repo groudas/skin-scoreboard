@@ -1,10 +1,8 @@
 # Skin Scoreboard
 
-This tool tracks the popularity of Dota 2 cosmetics by analyzing live match data from the OpenDota API. It identifies highly-spectated matches, extracts cosmetic usage from those matches, and aggregates daily statistics on which cosmetics are seen in the most watched games.
+This tool tracks Dota 2 cosmetic popularity by analyzing OpenDota live match data, identifying cosmetics in highly-spectated games, and aggregating daily usage statistics from the most watched matches.
 
-**Experimental / for educational purposes - Use with Caution**
-
-This code is under active development and is currently **highly experimental**. It is also one of my first personal coding experiences. There will be lots of rollbacks and redesigns.
+Experimental project for my first real code experience, actively developed. Expect frequent changes. **Use with caution, at your own risk**
 
 ![alt text](image.png)
 
@@ -13,26 +11,6 @@ This code is under active development and is currently **highly experimental**. 
 *   Usage indicators (better data comprehension)
 *   Marketplace price analysis (actual usefulness for the data)
 *   Visualization module (better insights)
-
-By using this software, you acknowledge it is provided at your **own risk**.
-
-## Current Features
-
-*   Fetches live match data from the OpenDota API.
-*   Filters for matches with high spectator counts.
-*   Downloads detailed data for selected matches.
-*   Extracts cosmetic items used by heroes in those matches.
-*   Aggregates daily popularity scores based on spectators.
-*   Persists raw and processed data locally.
-*   Shows final data in an interactive HTML graph (very early stage)
-
-## Project Structure
-
-*   `data/`: Storage for all data (raw, processed, match details, filtered data, aggregated stats).
-*   `src/`: Contains the core Node.js scripts (`config.js`, `utils.js`, logical modules).
-*   `package.json`: Project dependencies and scripts.
-*   `run_all.bat`: Helper scripts to run processing steps sequentially.
-*   `plot_cosmetics.html`: A temporary (and buggy) interface for viewing data.
 
 ## Setup
 
@@ -46,7 +24,7 @@ By using this software, you acknowledge it is provided at your **own risk**.
 
 ## Usage
 
-The project workflow involves two main phases: continuously fetching live data and periodically processing that data through several steps.
+The project workflow involves two main phases: (1)continuously fetching live data and (2)periodically processing that data through several steps.
 
 1.  **Start Live Data Fetching (Continuous):**
     This script (`step1_fetch_live.js`) runs indefinitely, polling the OpenDota live API every 15 minutes (default). It should be run in a separate terminal or managed by a process manager (e.g., `pm2`). Be sure your terminal is at the folder ~/src/module1, then run:
@@ -70,6 +48,7 @@ The project workflow involves two main phases: continuously fetching live data a
         ```
 3.  **Visualize Parsed Data:**
     Simple open `plot_cosmetics.html` with any browser and select either `daily_cosmetic_stats_marketable.json` or `daily_cosmetic_stats.json` files to load the data. Activate or deactivate the plotting by clicking on an item name. **Beware: the visualization tool is not optimized and is just a makeshift tool I made while finishing the rest of the code. I plan to build another visualization tool later.**
+
 ## Workflow Overview
 
 *   `step1`: Fetches raw live match data (`data/raw/`).
