@@ -1,7 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const config = require('../config').step5;
-const { log, ensureDirExists, readJsonFile, writeJsonFile } = require('../utils');
+import fs from 'fs'
+import path from 'path'
+import config from '../config.js';
+import { log, ensureDirExists, readJsonFile, writeJsonFile } from '../utils.js';
 
 // --- Helper Function to Load Non-Marketable Items ---
 function loadNonMarketableItems(filePath) {
@@ -117,11 +117,11 @@ function addNewContribution(matchId, newDate, newSpectators, cosmetics, dbMap) {
 // --- Main Execution Function ---
 async function runStep5() {
     log('info', "Starting Step 5: Updating Cosmetic Stats Database...");
-    const filteredMatchesDir = config.filteredMatchesDir;
-    const dbDir = config.dbDir;
-    const dbFilePath = config.dbFile; // Original DB Path
-    const nonMarketableFilePath = config.nonMarketableFile; // Filter list path
-    const filteredDbFilePath = config.filteredDbFile; // Filtered DB Path
+    const filteredMatchesDir = config.step5.filteredMatchesDir;
+    const dbDir = config.step5.dbDir;
+    const dbFilePath = config.step5.dbFile; // Original DB Path
+    const nonMarketableFilePath = config.step5.nonMarketableFile; // Filter list path
+    const filteredDbFilePath = config.step5.filteredDbFile; // Filtered DB Path
 
     if (!ensureDirExists(dbDir)) { // Ensure DB directory exists
         log('error', 'Database directory cannot be created/accessed. Exiting.');

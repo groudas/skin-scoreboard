@@ -1,16 +1,16 @@
 // src/step3_fetch_match_details.js
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
-const config = require('../config').step3;
-const { log, ensureDirExists, sleep, readJsonFile, writeJsonFile } = require('../utils');
+import fs from 'fs'
+import path from 'path'
+import axios from 'axios'
+import config from '../config.js';
+import { log, ensureDirExists, sleep, readJsonFile, writeJsonFile } from '../utils.js';
 
 async function fetchAndSaveMatch(matchId, outputFilePath) {
-    const apiUrl = `${config.apiBaseUrl}${matchId}`;
+    const apiUrl = `${config.step3.apiBaseUrl}${matchId}`;
     log('debug', `  -> Fetching from: ${apiUrl}`);
     try {
         const response = await axios.get(apiUrl, {
-            timeout: config.requestTimeoutMs,
+            timeout: config.step3.requestTimeoutMs,
         });
 
         if (response.status === 200 && response.data) {
@@ -33,7 +33,7 @@ async function fetchAndSaveMatch(matchId, outputFilePath) {
                 return 'not_found';
             }
         } else if (error.request) {
-            log('error', `  -> Network Error for ${matchId}: No response received. Timeout: ${config.requestTimeoutMs}ms.`, error.message);
+            log('error', `  -> Network Error for ${matchId}: No response received. Timeout: ${config.step3.requestTimeoutMs}ms.`, error.message);
         } else {
             log('error', `  -> Request Setup Error for ${matchId}:`, error.message);
         }
@@ -44,26 +44,26 @@ async function fetchAndSaveMatch(matchId, outputFilePath) {
 
 async function runStep3() {
     log('info', "Starting Step 3: Fetching Match Details...");
-    if (!ensureDirExists(config.outputDir)) {
+    if (!ensureDirExists(config.step3.outputDir)) {
         log('error', 'Output directory cannot be created/accessed. Exiting.');
         process.exit(1);
     }
 
-    const filteredData = readJsonFile(config.filteredMatchesFile);
+    const filteredData = readJsonFile(config.step3.filteredMatchesFile);
     if (!filteredData) {
-        log('error', `Failed to load or parse ${config.filteredMatchesFile}. Exiting.`);
+        log('error', `Failed to load or parse ${config.step3.filteredMatchesFile}. Exiting.`);
         process.exit(1);
     }
     if (!Array.isArray(filteredData)) {
-        log('error', `Data in ${config.filteredMatchesFile} is not a valid JSON array. Exiting.`);
+        log('error', `Data in ${config.step3.filteredMatchesFile} is not a valid JSON array. Exiting.`);
         process.exit(1);
     }
 
     const matchIdsToCheck = new Map();
     const now = Date.now();
-    const minAgeMillis = config.minimumMatchAgeHours * 60 * 60 * 1000;
+    const minAgeMillis = config.step3.minimumMatchAgeHours * 60 * 60 * 1000;
 
-    log('info', `Checking match age against current time. Minimum age: ${config.minimumMatchAgeHours} hours.`);
+    log('info', `Checking match age against current time. Minimum age: ${config.step3.minimumMatchAgeHours} hours.`);
 
     filteredData.forEach(block => {
         if (block && block.timestamp && block.top_matches) {
@@ -108,11 +108,11 @@ async function runStep3() {
     let errorCount = 0;
     let notFoundCount = 0;
 
-    log('info', `Starting download process. Delay between requests: ${config.requestDelayMs / 1000}s`);
+    log('info', `Starting download process. Delay between requests: ${config.step3.requestDelayMs / 1000}s`);
 
     for (let i = 0; i < uniqueMatchIds.length; i++) {
         const matchId = uniqueMatchIds[i];
-        const outputFilePath = path.join(config.outputDir, `${matchId}.json`);
+        const outputFilePath = path.join(config.step3.outputDir, `${matchId}.json`);
         const progress = `(${(i + 1)}/${uniqueMatchIds.length})`;
 
         log('info', `${progress} Checking match ${matchId}...`);
@@ -123,7 +123,7 @@ async function runStep3() {
         } else {
             log('info', `  -> File not found. Preparing to download ${matchId}.json`);
             if (i > 0 || fetchedCount > 0 || errorCount > 0 || notFoundCount > 0) {
-                 await sleep(config.requestDelayMs);
+                 await sleep(config.step3.requestDelayMs);
             }
 
             const fetchResult = await fetchAndSaveMatch(matchId, outputFilePath);

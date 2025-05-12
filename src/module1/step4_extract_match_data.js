@@ -1,10 +1,10 @@
 // src/step4_extract_match_data.js
-const fs = require('fs');
-const path = require('path');
-const config = require('../config'); // Need both step3 and step4 configs
-const { log, ensureDirExists, readJsonFile, writeJsonFile, formatDate } = require('../utils');
+import fs from 'fs'
+import path from 'path'
+import config from '../config.js';
+import { log, ensureDirExists, readJsonFile, writeJsonFile, formatDate } from '../utils.js';
 
-// Build a map of { match_id: max_spectators } from the filtered live data
+
 function buildSpectatorMap(filteredLiveFilePath) {
     log('info', `Building spectator map from ${filteredLiveFilePath}`);
     const spectatorMap = new Map();
