@@ -2,7 +2,7 @@
 
 This tool tracks Dota 2 cosmetic popularity by analyzing OpenDota live match data, identifying cosmetics in highly-spectated games, and aggregating daily usage statistics from the most watched matches.
 
-Experimental project for my first real code experience, actively developed. Expect frequent changes. **Use with caution, at your own risk**
+Experimental project for my first real code experience, actively developed. Expect frequent changes. **Use with caution, at your own risk**.
 
 ![alt text](image.png)
 
@@ -29,7 +29,7 @@ The project workflow involves two main phases: (1)continuously fetching live dat
 1.  **Start Live Data Fetching (Continuous):**
     This script (`step1_fetch_live.js`) runs indefinitely, polling the OpenDota live API every 15 minutes (default). It should be run in a separate terminal or managed by a process manager (e.g., `pm2`). Be sure your terminal is at the folder ~/src/module1, then run:
     ```bash
-    node src/modules/step1_fetch_live.js
+    node src/module1/step1_fetch_live.js
     ```
 
     *There is also a step1.bat that works exacly the .js file, but you can run by typing `./step1.bat` or just double clicking the file.
@@ -41,10 +41,10 @@ The project workflow involves two main phases: (1)continuously fetching live dat
         
     *   **Alternatively:** Run each step individually.
         ```bash
-        node src/modules/step2_filter_top_matches.js
-        node src/modules/step3_fetch_match_details.js
-        node src/modules/step4_extract_match_data.js
-        node src/modules/step5_update_database.js
+        node src/module1/step2_filter_top_matches.js
+        node src/module1/step3_fetch_match_details.js
+        node src/module1/step4_extract_match_data.js
+        node src/module1/step5_update_database.js
         ```
 3.  **Visualize Parsed Data:**
     Simple open `plot_cosmetics.html` with any browser and select either `daily_cosmetic_stats_marketable.json` or `daily_cosmetic_stats.json` files to load the data. Activate or deactivate the plotting by clicking on an item name. **Beware: the visualization tool is not optimized and is just a makeshift tool I made while finishing the rest of the code. I plan to build another visualization tool later.**
