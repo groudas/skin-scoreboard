@@ -1,15 +1,14 @@
-// ../config.js (assuming it's in the 'src' directory, one level up from 'src/module2')
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Replicate __dirname and __filename for ES modules
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const baseDataDir = path.join(__dirname, '..', 'data'); // If config.js is in src/, __dirname is .../src, so '..' goes to project root.
+const baseDataDir = path.join(__dirname, '..', 'data');
 
 const config = {
-    logLevel: 'info',
+    logLevel: 'debug', // Levels: debug, info, warn, error
     step1: {
         targetUrl: 'https://api.opendota.com/api/live',
         outputDir: path.join(baseDataDir, 'raw'),
@@ -52,6 +51,10 @@ const config = {
         priceDbFile: path.join(baseDataDir, 'database', 'priceDB.json'),
         itemsDbDir: path.join(baseDataDir, 'database'),
         itemsDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
+    },
+    randomSleep: {
+        minMs: 1000,
+        maxMs: 10000,
     }
 };
 

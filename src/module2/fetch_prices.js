@@ -1,180 +1,223 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import fs from 'fs'; // For saving HTML if needed for debugging
+import fs from 'fs';
 import path from 'path';
-import config from '../config.js'; // Assuming config is also an ES module or can be imported
-
+import config from '../config.js';
+import { randomSleep } from '../utils.js';
 
 //::Carregar pricedb.json e DAILY_COSMETIC_STATS_MARKETABLE.json::
-let priceDB = {}
-let itemsDB = []
+let priceDB = {};
+let itemsDB = [];
 
+// --- Load itemsDB ---
 try {
-    itemsDB = fs.readFileSync(config.module2.itemsDbFile);
+    const itemsDbRaw = fs.readFileSync(config.module2.itemsDbFile, { encoding: 'utf8' });
     try {
-        itemsDB = JSON.parse(itemsDB);
+        const parsedItemsDb = JSON.parse(itemsDbRaw);
         let allItemNames = new Set();
-        if (Array.isArray(itemsDB)) {
-            itemsDB.forEach(entry => {
+        if (Array.isArray(parsedItemsDb)) {
+            parsedItemsDb.forEach(entry => {
                 if (entry && typeof entry.items === 'object') {
                     Object.keys(entry.items).forEach(itemName => allItemNames.add(itemName));
                 }
             });
+        } else {
+             console.warn(`ItemsDB file "${config.module2.itemsDbFile}" did not contain an array. Items list will be empty.`);
         }
         itemsDB = Array.from(allItemNames);
-     } catch (e) {console.log("Failed to parse ItemsDB."); process.exit()};
-    console.log(`File ${config.module2.itemsDbFile} loaded.`);
+        console.log(`File ${config.module2.itemsDbFile} loaded and parsed. Found ${itemsDB.length} unique items.`);
+    } catch (e) {
+        console.error(`Failed to parse ItemsDB file "${config.module2.itemsDbFile}".`, e);
+
+    }
 } catch (e) {
-    console.log("Error when loading items database! It will be impossible to identify new itens to gather prices. Only the ones present at the Price DB will be updated.", e);
+    console.error(`Error when loading items database file "${config.module2.itemsDbFile}". Item discovery will be impossible. Only items already in PriceDB will be updated.`, e);
 }
 
-try {
-    priceDB = fs.readFileSync(config.module2.priceDbFile);
-    try { priceDB = JSON.parse(priceDB) } catch (e) {console.log("Failed to parse PriceDB."); process.exit()};
-    console.log(`File ${config.module2.priceDbFile} loaded.`)
+// --- Load priceDB ---
+const priceDBFile = config.module2.priceDbFile;
 
-} catch (e) {
-    console.log("Price database not found or incorrectly loaded! Continuing without initial database.", e);
+if (fs.existsSync(priceDBFile)) {
+  try {
+    const fileContent = fs.readFileSync(priceDBFile, { encoding: 'utf8' });
+
+    if (fileContent.trim() === '') {
+        console.warn(`PriceDB file "${priceDBFile}" is empty. Starting with an empty database.`);
+        priceDB = {};
+    } else {
+        priceDB = JSON.parse(fileContent);
+        console.log(`File ${priceDBFile} loaded and parsed successfully. Contains ${Object.keys(priceDB).length} items.`);
+    }
+  } catch (e) {
+    console.error(`Error loading or parsing PriceDB file "${priceDBFile}":`, e.message);
+    console.error("Due to the error, the application will exit. Please fix the file or remove it.");
+    process.exit(1);
+  }
+} else {
+  console.log(`PriceDB file "${priceDBFile}" not found. Starting with an empty database.`);
+  priceDB = {};
 }
 
-if (!itemsDB && !priceDB) {
-    console.log(`Unable to load neither ${config.module2.priceDbFile} and ${config.module2.itemsDbFile}. Prices not updated. Terminating price the fetching process.`);
-    process.exit()
+
+const itemsToProcess = new Set([...itemsDB, ...Object.keys(priceDB)]);
+
+if (itemsToProcess.size === 0) {
+    console.log("No items found in ItemsDB or PriceDB. Nothing to process. Terminating price fetching process.");
+    process.exit(0);
+} else {
+    console.log(`Found ${itemsToProcess.size} unique items to potentially process/update.`);
 }
 
 
-//::Função::
+//::Função para extrair histórico de preço::
+/**
+ * Extracts price history array from a Steam Community Market listing page.
+ * @param {string} itemString The name of the item (e.g., "A Dire Gaze").
+ * @returns {Promise<Array<Array<string|number|string>> | null>} A promise that resolves with the price history array on success, or null on failure.
+ */
 async function extractPriceHistory(itemString) {
-    let url = `https://steamcommunity.com/market/listings/570/${encodeURIComponent(itemString)}`
+    let url = `https://steamcommunity.com/market/listings/570/${encodeURIComponent(itemString)}`;
     const targetFingerprint = 'var line1=[[';
+
     try {
-        console.log(`Fetching URL: ${url}`);
+        console.log(`Fetching URL for ${itemString}: ${url}`);
 
         const response = await axios.get(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            }
+
+            },
+            timeout: 15000
         });
 
         const html = response.data;
-        console.log("HTML fetched successfully.");
+
 
         const $ = cheerio.load(html);
-        const scriptElements = $('#responsive_page_template_content > script');
+
+        const scriptElements = $('script');
 
         let targetScriptContent = null;
 
-        if (scriptElements.length > 0) {
-            scriptElements.each((index, element) => {
-                const currentScriptContent = $(element).html();
-                if (currentScriptContent && currentScriptContent.includes(targetFingerprint)) {
-                    console.log(`\nFound target script containing "${targetFingerprint}"`);
-                    targetScriptContent = currentScriptContent;
-                    return false; // Exit .each loop
-                }
-            });
-        }
+
+        scriptElements.each((index, element) => {
+            const currentScriptContent = $(element).html();
+            if (currentScriptContent && currentScriptContent.includes(targetFingerprint)) {
+
+                targetScriptContent = currentScriptContent;
+                return false;
+            }
+        });
 
         if (targetScriptContent) {
+
             const line1Regex = /\bvar\s+line1\s*=\s*(\[\[[\s\S]*?\]\]);/;
             const match = targetScriptContent.match(line1Regex);
 
             if (match && match[1]) {
                 const line1ArrayString = match[1];
-                console.log("\n--- Extracted line1 Array String ---");
+
 
                 try {
+
                     const priceHistoryArray = JSON.parse(line1ArrayString);
 
-                    console.log("\n--- Successfully Parsed Price History (line1) ---");
-                    console.log(`Total data points: ${priceHistoryArray.length}`);
+                    console.log(`Successfully extracted history for ${itemString}. Data points: ${priceHistoryArray.length}`);
 
-                    if (priceHistoryArray.length > 0) {
-                        console.log("\nFirst 5 data points:");
-                        for (let i = 0; i < Math.min(5, priceHistoryArray.length); i++) {
-                            console.log(priceHistoryArray[i]);
-                        }
-
-                        console.log("\nLast 5 data points (if more than 5):");
-                        if (priceHistoryArray.length > 5) {
-                            for (let i = Math.max(0, priceHistoryArray.length - 5); i < priceHistoryArray.length; i++) {
-                                console.log(priceHistoryArray[i]);
-                            }
-                        }
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 500));
                     return priceHistoryArray;
 
                 } catch (e) {
-                    console.error("\nError parsing the extracted line1 array string as JSON:", e);
+                    console.error(`Error parsing the extracted line1 array string for "${itemString}" as JSON:`, e.message);
                     console.log("Extracted string that failed to parse (first 500 chars):");
                     console.log(line1ArrayString.substring(0,500));
-                    // Fallback or further debugging needed here if JSON.parse fails.
-                    // For this specific Steam data, JSON.parse should work.
+                    return null;
                 }
             } else {
-                console.log("\nCould not find 'var line1=[[...]];' with regex in the target script.");
-                console.log("The script content might have changed, or the regex needs adjustment.");
-                // console.log("Target script content (first 1000 chars):");
-                // console.log(targetScriptContent.substring(0,1000));
+                console.warn(`Could not find 'var line1=[[...]];' with regex in the target script for "${itemString}".`);
+                console.warn("The script content might have changed, or the regex needs adjustment.");
+                return null;
             }
         } else {
-            console.log(`\nTarget script containing "${targetFingerprint}" NOT FOUND.`);
-            console.log("This could mean:");
-            console.log("1. The fingerprint is no longer present or has changed.");
-            console.log("2. The script is not a direct child of #responsive_page_template_content.");
-            console.log("3. Steam is serving a different page (CAPTCHA, error, etc.).");
+            console.warn(`Target script containing "${targetFingerprint}" NOT FOUND for "${itemString}".`);
+            console.warn("This could mean the fingerprint changed, or the page structure is different (e.g., CAPTCHA).");
 
-            const filePath = 'fetched_page_no_line1_script.html';
-            fs.writeFileSync(filePath, html);
-            console.log(`\nThe full HTML content has been saved to: ${filePath}`);
+            return null;
         }
 
     } catch (error) {
-        console.error("Error during the process:");
+        console.error(`Error fetching or processing "${itemString}":`);
         if (error.response) {
             console.error("Status:", error.response.status);
-            const errorFilePath = 'error_response_content.html';
-            fs.writeFileSync(errorFilePath, typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data));
-            console.log(`Error response data saved to: ${errorFilePath}`);
+
+            if (error.response.status === 429) {
+                console.error("Received 429 Too Many Requests. Consider increasing sleep time.");
+            }
         } else if (error.request) {
-            console.error("Request Error: No response received.", error.request);
+            console.error("Request Error: No response received.", error.request.code);
         } else {
             console.error("Error Message:", error.message);
         }
+        return null;
     }
 }
 
-//LOOP1: CICLAR EM CADA ITEM DE DAILY_COSMETIC_STATS_MARKETABLE QUE NÃO TENHA DADOS NO PRICEDB.JSON
 
-//Cria array dos itens que constam no priceDB
-let priceDBItems = Object.keys(priceDB);
+async function processItems() {
+    console.log("\n--- Starting price history fetching process ---");
 
-//Compara array de items DB com array de priceDB, gerando nova lista itemsMissingPrice
-let itemsMissingPrice = itemsDB.filter(itemFromDB => !priceDBItems.includes(itemFromDB));
+    const itemsArrayToProcess = Array.from(itemsToProcess);
 
-// Agora itemsMissingPrice contém apenas os itens que precisam ter o preço extraído
-// e itemsMissingPrice é um array (ou vazio se não houver itens faltando).
+    for (const item of itemsArrayToProcess) {
+        console.log(`\nProcessing item: ${item}`);
 
-if (itemsMissingPrice.length > 0) {
-    console.log(`\nFound ${itemsMissingPrice.length} items missing from priceDB. Fetching prices...`);
 
-    for (const item of itemsMissingPrice) { 
-        console.log(`Fetching price history for: ${item}`);
         const historyData = await extractPriceHistory(item);
+
         if (historyData) {
+
             priceDB[item] = historyData;
-            console.log(`Successfully fetched and added history for ${item}`);
+            console.log(`Successfully updated price data for "${item}" in memory.`);
+
+
+             if (index % 10 === 0) { // Save every 10 items
+                 console.log(`Saving progress after processing ${index + 1} items...`);
+                 try {
+                     const dir = path.dirname(priceDBFile);
+                     fs.mkdirSync(dir, { recursive: true });
+                     fs.writeFileSync(priceDBFile, JSON.stringify(priceDB, null, 2), { encoding: 'utf8' });
+                     console.log("Progress saved.");
+                 } catch (saveError) {
+                     console.error("Error saving progress file:", saveError);
+                 }
+             }
+
         } else {
-            console.warn(`Não foi possível extrair o histórico para o item: ${item}`);
+            console.warn(`Skipping update for "${item}" due to failed data extraction.`);
         }
+
+        console.log("Waiting randomly before the next request...");
+        await randomSleep();
     }
-} else {
-    console.log("Nenhum item com preço faltando foi encontrado.");
+
+
+    console.log("\n--- All items processed. Saving final PriceDB file ---");
+    try {
+        const dir = path.dirname(priceDBFile);
+        fs.mkdirSync(dir, { recursive: true });
+
+
+        const jsonOutput = JSON.stringify(priceDB, null, 2);
+
+        fs.writeFileSync(priceDBFile, jsonOutput, { encoding: 'utf8' });
+        console.log(`Successfully saved updated PriceDB to "${priceDBFile}". Total items saved: ${Object.keys(priceDB).length}`);
+    } catch (saveError) {
+        console.error(`Error saving final PriceDB file "${priceDBFile}":`, saveError);
+    }
+
+    console.log("\n--- Price history fetching process finished ---");
 }
 
-console.log("Conteúdo de priceHistoryArray após buscar os preços faltantes:", priceHistoryArray);
 
-//LOOP2: CICLAR NOS ITENS DE DAILY_COSMETIC_STATS_MARKETABLE, DO MAIS DESATUALIZADO PARA O MENOS ATUALIZADO
+processItems();

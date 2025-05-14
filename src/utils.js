@@ -34,6 +34,15 @@ const sleep = (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Helper function for random delay
+const randomSleep = async () => {
+    const minMs = configModule.randomSleep.minMs;
+    const maxMs = configModule.randomSleep.maxMs;
+    const randomMs = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+    log('debug', `Performing random sleep for ${randomMs / 1000} seconds (between ${minMs}-${maxMs} ms)...`);
+    await sleep(randomMs);
+}
+
 // Helper function to format date from Unix timestamp (seconds)
 function formatDate(unixTimestamp) {
     if (!unixTimestamp || typeof unixTimestamp !== 'number') return null;
@@ -82,6 +91,7 @@ export {
     log,
     ensureDirExists,
     sleep,
+    randomSleep,
     formatDate,
     readJsonFile,
     writeJsonFile
