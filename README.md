@@ -49,13 +49,6 @@ The project workflow involves two main phases: (1)continuously fetching live dat
 3.  **Visualize Parsed Data:**
     Simple open `plot_cosmetics.html` with any browser and select either `daily_cosmetic_stats_marketable.json` or `daily_cosmetic_stats.json` files to load the data. Activate or deactivate the plotting by clicking on an item name. **Beware: the visualization tool is not optimized and is just a makeshift tool I made while finishing the rest of the code. I plan to build another visualization tool later.**
 
-## Workflow Overview
-
-*   `step1`: Fetches raw live match data (`data/raw/`).
-*   `step2`: Filters raw data for top matches, saves a list, and moves raw files (`data/processed/filtered_live_matches.json`, `data/raw/processed/`).
-*   `step3`: Downloads detailed match data for filtered matches (`data/matches/`).
-*   `step4`: Extracts cosmetic usage and relevant info from match details (`data/filtered_matches/`).
-*   `step5`: Reads extracted data and updates the aggregated daily statistics database (`data/database/daily_cosmetic_stats.json`).
 
 ## Notes
 
