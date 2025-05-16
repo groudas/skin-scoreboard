@@ -1,16 +1,15 @@
 # Skin Scoreboard
 
-This tool tracks Dota 2 cosmetic popularity by analyzing OpenDota live match data, identifying cosmetics in highly-spectated games, and aggregating daily usage statistics from the most watched matches.
+This tool tracks Dota 2 cosmetic popularity by analyzing OpenDota live match data, identifying cosmetics in highly-spectated games, and aggregating daily usage and prices statistics from the most watched matches.
 
 Experimental project for my first real code experience, actively developed. Expect frequent changes. **Use with caution, at your own risk**.
 
 ![alt text](image.png)
 
 **Upcoming (v0.5 MVP):**
-*   ~~MongoDB full migration (speedy DB queries)~~ _(dropped for now)_
 *   Usage indicators (better data comprehension)
 *   Marketplace price analysis (actual usefulness for the data)
-*   Visualization module (better insights)
+*   Visualization module (better insights) - DONE
 
 ## Setup
 
@@ -45,6 +44,7 @@ The project workflow involves two main phases: (1)continuously fetching live dat
         node src/module1/step3_fetch_match_details.js
         node src/module1/step4_extract_match_data.js
         node src/module1/step5_update_database.js
+        node src/module2/fetch_prices.js
         ```
 3.  **Visualize Parsed Data:**
     Simple open `plot_cosmetics.html` with any browser and select either `daily_cosmetic_stats_marketable.json` or `daily_cosmetic_stats.json` files to load the data. Activate or deactivate the plotting by clicking on an item name. **Beware: the visualization tool is not optimized and is just a makeshift tool I made while finishing the rest of the code. I plan to build another visualization tool later.**
