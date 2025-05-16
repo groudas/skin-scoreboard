@@ -1,159 +1,395 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dota 2 Cosmetic Stats</title>
+    <title>Dota 2 Cosmetic Stats & Prices</title>
     <!-- Include Plotly.js library -->
     <script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
     <style>
         body { font-family: sans-serif; margin: 20px; }
         #plotDiv { width: 95%; height: 600px; margin-top: 20px; }
-        label, button { margin-right: 10px; }
-        #controls { margin-bottom: 15px; }
-        #message { margin-top: 10px; color: #555; }
+        label { display: block; margin-bottom: 5px; }
+        input[type="file"] { margin-bottom: 5px;}
+        .file-input-group { margin-bottom: 15px; padding: 10px; border: 1px solid #eee; border-radius: 4px; }
+        #controls { margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 20px; }
+        #fileControls { flex-basis: 300px; }
+        #itemSelectorControls { flex-basis: 400px; }
+        #message { margin-top: 10px; color: #555; font-style: italic; width: 100%;}
+        #itemSelector { width: 100%; height: 150px; margin-bottom: 10px; }
+        #plotButton { padding: 8px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        #plotButton:disabled { background-color: #ccc; cursor: not-allowed; }
+        .loader {
+            border: 5px solid #f3f3f3; /* Light grey */
+            border-top: 5px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none; /* Hidden by default */
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
 
-    <h1>Dota 2 Cosmetic Popularity Over Time</h1>
+    <h1>Dota 2 Cosmetic Popularity & Price Over Time</h1>
 
     <div id="controls">
-        <label for="jsonFile">Select 'daily_cosmetic_stats_marketable.json':</label>
-        <input type="file" id="jsonFile" accept=".json">
-        <!-- Updated message -->
-        <span id="message">Load file to generate chart. Only selected items shown initially.</span>
+        <div id="fileControls">
+            <div class="file-input-group">
+                <label for="scoreFile">1. Select 'daily_cosmetic_stats_marketable.json' (Score Data):</label>
+                <input type="file" id="scoreFile" accept=".json">
+            </div>
+            <div class="file-input-group">
+                <label for="priceFile">2. Select 'priceDB.json' (Consolidated Price Data):</label>
+                <input type="file" id="priceFile" accept=".json">
+            </div>
+        </div>
+        <div id="itemSelectorControls" style="display: none;">
+             <label for="itemSelector">Select Items to Plot (Ctrl/Cmd + Click for multiple):</label>
+             <select multiple id="itemSelector"></select>
+             <button id="plotButton" disabled>Plot Selected Items</button>
+        </div>
     </div>
+    <div id="message">Load both files to see available items.</div>
+    <div class="loader" id="loader"></div>
 
     <!-- Div where the plot will be rendered -->
     <div id="plotDiv"></div>
 
     <script>
-        const fileInput = document.getElementById('jsonFile');
+        const scoreFileInput = document.getElementById('scoreFile');
+        const priceFileInput = document.getElementById('priceFile');
+        const itemSelector = document.getElementById('itemSelector');
+        const plotButton = document.getElementById('plotButton');
         const plotDiv = document.getElementById('plotDiv');
         const messageEl = document.getElementById('message');
+        const loaderEl = document.getElementById('loader');
+        const itemSelectorControlsEl = document.getElementById('itemSelectorControls');
 
-        fileInput.addEventListener('change', handleFileSelect, false);
+        let scoreDataGlobal = null;
+        let priceDataGlobal = null;
+        let scoreFileName = "";
+        let priceFileName = "";
+        let allAvailableItemNames = new Set();
+        let relayoutListenerAttached = false; // Flag to ensure listener is attached only once
 
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) {
-                messageEl.textContent = 'No file selected.';
-                Plotly.purge(plotDiv);
+        const defaultSelectedItems = [
+            "Genuine Weather Snow",
+        ];
+
+        scoreFileInput.addEventListener('change', (event) => handleFileSelect(event, 'score'), false);
+        priceFileInput.addEventListener('change', (event) => handleFileSelect(event, 'price'), false);
+        plotButton.addEventListener('click', plotSelectedItems);
+
+        function showLoader(show) {
+            loaderEl.style.display = show ? 'block' : 'none';
+        }
+
+        function updateStatusMessage(forceMessage = null) {
+            if (forceMessage) {
+                messageEl.textContent = forceMessage;
                 return;
             }
-            messageEl.textContent = `Loading ${file.name}...`;
+            let currentMessage = "";
+            if (scoreDataGlobal && priceDataGlobal) {
+                currentMessage = `Files loaded. Select items from the list and click 'Plot Selected Items'. ${allAvailableItemNames.size} items available.`;
+                itemSelectorControlsEl.style.display = 'block';
+                plotButton.disabled = itemSelector.selectedOptions.length === 0;
+            } else if (scoreFileName && priceFileName) {
+                currentMessage = `Processing ${scoreFileName} and ${priceFileName}...`;
+                itemSelectorControlsEl.style.display = 'none';
+                plotButton.disabled = true;
+            } else if (scoreFileName) {
+                currentMessage = `Loaded ${scoreFileName}. Please select the Price Data file.`;
+                itemSelectorControlsEl.style.display = 'none';
+                plotButton.disabled = true;
+            } else if (priceFileName) {
+                currentMessage = `Loaded ${priceFileName}. Please select the Score Data file.`;
+                itemSelectorControlsEl.style.display = 'none';
+                plotButton.disabled = true;
+            } else {
+                currentMessage = "Load both files to see available items.";
+                itemSelectorControlsEl.style.display = 'none';
+                plotButton.disabled = true;
+            }
+            messageEl.textContent = currentMessage;
+        }
 
+        itemSelector.addEventListener('change', () => {
+            plotButton.disabled = itemSelector.selectedOptions.length === 0;
+        });
+
+        async function handleFileSelect(event, fileType) {
+            const file = event.target.files[0];
+            if (!file) {
+                messageEl.textContent = `No ${fileType} file selected. Please select both files.`;
+                if (fileType === 'score') { scoreDataGlobal = null; scoreFileName = ""; }
+                if (fileType === 'price') { priceDataGlobal = null; priceFileName = ""; }
+                Plotly.purge(plotDiv);
+                allAvailableItemNames.clear();
+                itemSelector.innerHTML = '';
+                updateStatusMessage();
+                return;
+            }
+            if (fileType === 'score') scoreFileName = file.name;
+            if (fileType === 'price') priceFileName = file.name;
+            updateStatusMessage();
+            showLoader(true);
             const reader = new FileReader();
-
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     const jsonData = JSON.parse(e.target.result);
-                    if (!Array.isArray(jsonData)) {
-                         throw new Error("JSON data is not an array.");
+                    if (fileType === 'score') {
+                        if (!Array.isArray(jsonData)) throw new Error("Score JSON must be an array.");
+                        scoreDataGlobal = jsonData;
+                    } else if (fileType === 'price') {
+                        if (typeof jsonData !== 'object' || Array.isArray(jsonData) || jsonData === null) throw new Error("Price JSON must be an object.");
+                        priceDataGlobal = jsonData;
                     }
-                    messageEl.textContent = `Processing ${file.name}...`;
-                    plotData(jsonData);
-                     // Updated message after plotting
-                    messageEl.textContent = `Chart generated for ${file.name}. Default items shown. Click legend items to show/hide others. Drag on axes to zoom.`;
+                    await tryPrepareSelectors();
                 } catch (error) {
-                    console.error("Error reading or parsing JSON file:", error);
-                    messageEl.textContent = `Error processing file: ${error.message}`;
+                    console.error(`Error reading/parsing ${fileType} JSON:`, error);
+                    messageEl.textContent = `Error processing ${file.name}: ${error.message}.`;
+                    if (fileType === 'score') { scoreDataGlobal = null; scoreFileName = ""; }
+                    if (fileType === 'price') { priceDataGlobal = null; priceFileName = ""; }
                     Plotly.purge(plotDiv);
+                    allAvailableItemNames.clear();
+                    itemSelector.innerHTML = '';
+                    updateStatusMessage();
+                } finally {
+                    showLoader(false);
                 }
             };
-
-             reader.onerror = function() {
-                 messageEl.textContent = `Error reading file: ${reader.error}`;
+            reader.onerror = function() {
+                 messageEl.textContent = `Error reading ${fileType} file: ${reader.error}`;
+                 if (fileType === 'score') { scoreDataGlobal = null; scoreFileName = ""; }
+                 if (fileType === 'price') { priceDataGlobal = null; priceFileName = ""; }
                  Plotly.purge(plotDiv);
-             }
-
+                 showLoader(false);
+                 updateStatusMessage();
+            }
             reader.readAsText(file);
         }
 
-        function plotData(data) {
-             // --- *** START MODIFICATION *** ---
-             // Define the items you want visible by default (use exact names)
-            const defaultVisibleItems = [
-                "Genuine Weather Snow", // Example item 1
-                "Arcana Name Example"   // Example item 2 - Replace with your actual item names
-                // Add more item names here if needed
-            ];
-            const defaultVisibleSet = new Set(defaultVisibleItems); // Use a Set for faster lookups
-            // --- *** END MODIFICATION *** ---
-
-
-            // 1. Data Transformation (same as before)
-            const itemsData = {};
-            const allDates = new Set();
-            data.forEach(dailyEntry => {
-                if (!dailyEntry || !dailyEntry.date || !dailyEntry.items) return;
-                const parts = dailyEntry.date.split('/');
-                if (parts.length !== 3) return;
-                const currentDate = new Date(parts[2], parts[1] - 1, parts[0]);
-                 if (isNaN(currentDate.getTime())) return;
-                const dateStringForPlotly = `${parts[2]}-${String(parts[1]).padStart(2,'0')}-${String(parts[0]).padStart(2,'0')}`;
-                allDates.add(dateStringForPlotly);
-                Object.entries(dailyEntry.items).forEach(([itemName, score]) => {
-                    if (!itemsData[itemName]) {
-                        itemsData[itemName] = { dates: [], scores: [] };
-                    }
-                    itemsData[itemName].dates.push(dateStringForPlotly);
-                    itemsData[itemName].scores.push(score);
-                });
-            });
-            const sortedDates = Array.from(allDates).sort();
-
-
-            // 2. Create Plotly Traces (with visibility logic)
-            const plotTraces = [];
-            Object.entries(itemsData).forEach(([itemName, itemInfo]) => {
-                const scoreMap = new Map();
-                for(let i = 0; i < itemInfo.dates.length; i++) {
-                    scoreMap.set(itemInfo.dates[i], itemInfo.scores[i]);
-                }
-                const alignedScores = sortedDates.map(date => scoreMap.get(date) || 0);
-
-                // --- *** START MODIFICATION *** ---
-                // Determine visibility based on the defaultVisibleSet
-                const isVisibleByDefault = defaultVisibleSet.has(itemName);
-                // --- *** END MODIFICATION *** ---
-
-                plotTraces.push({
-                    x: sortedDates,
-                    y: alignedScores,
-                    mode: 'lines+markers',
-                    type: 'scatter',
-                    name: itemName,
-                    marker: { size: 4 },
-                    // --- *** START MODIFICATION *** ---
-                    // Set visibility: 'legendonly' hides it but keeps it in the legend
-                    visible: isVisibleByDefault ? true : 'legendonly'
-                    // --- *** END MODIFICATION *** ---
-                });
-            });
-
-            // Sort traces alphabetically (same as before)
-            plotTraces.sort((a, b) => a.name.localeCompare(b.name));
-
-            // 3. Define Layout (same as before)
-            const layout = {
-                title: 'Daily Cosmetic "Score" (Spectators)',
-                xaxis: {
-                    title: 'Date',
-                    type: 'date',
-                },
-                yaxis: {
-                    title: 'Total Spectator Score',
-                    rangemode: 'tozero'
-                },
-                hovermode: 'closest',
-                 legend: {} // Default legend settings are usually fine
-            };
-
-            // 4. Generate Plot (same as before)
-            Plotly.newPlot(plotDiv, plotTraces, layout, {responsive: true});
+        async function tryPrepareSelectors() {
+            if (scoreDataGlobal && priceDataGlobal) {
+                updateStatusMessage("Extracting item names...");
+                showLoader(true);
+                await new Promise(resolve => setTimeout(resolve, 50));
+                allAvailableItemNames.clear();
+                Object.keys(priceDataGlobal).forEach(name => allAvailableItemNames.add(name));
+                // Optionally iterate scoreDataGlobal for names if necessary, but can be slow
+                // scoreDataGlobal.forEach(d => { if (d && d.items) Object.keys(d.items).forEach(name => allAvailableItemNames.add(name)); });
+                populateItemSelector();
+                showLoader(false);
+                updateStatusMessage();
+            } else {
+                updateStatusMessage();
+            }
         }
 
-    </script>
+        function populateItemSelector() {
+            itemSelector.innerHTML = '';
+            const sortedItemNames = Array.from(allAvailableItemNames).sort((a, b) => a.localeCompare(b));
+            sortedItemNames.forEach(itemName => {
+                const option = document.createElement('option');
+                option.value = itemName;
+                option.textContent = itemName;
+                if (defaultSelectedItems.includes(itemName)) option.selected = true;
+                itemSelector.appendChild(option);
+            });
+            plotButton.disabled = itemSelector.selectedOptions.length === 0;
+        }
 
+        function parsePriceDate(dateStr) {
+            const parts = dateStr.split(" ");
+            if (parts.length < 3) { console.warn("Invalid price date format:", dateStr); return null; }
+            const monthStr = parts[0];
+            const day = String(parts[1]).padStart(2, '0');
+            const year = parts[2];
+            const monthMap = { "Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04", "May": "05", "Jun": "06", "Jul": "07", "Aug": "08", "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12" };
+            const month = monthMap[monthStr];
+            if (!month) { console.warn("Invalid month in price date:", monthStr, "from", dateStr); return null; }
+            return `${year}-${month}-${day}`;
+        }
+
+        async function plotSelectedItems() {
+            const selectedItemNames = Array.from(itemSelector.selectedOptions).map(opt => opt.value);
+            if (selectedItemNames.length === 0) {
+                messageEl.textContent = "No items selected to plot.";
+                Plotly.purge(plotDiv);
+                return;
+            }
+            if (!scoreDataGlobal || !priceDataGlobal) {
+                messageEl.textContent = "Please load both data files first.";
+                return;
+            }
+            updateStatusMessage(`Processing data for ${selectedItemNames.length} selected item(s)...`);
+            showLoader(true);
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const itemsScoreData = {};
+            const itemsPriceData = {};
+            const allDates = new Set();
+
+            scoreDataGlobal.forEach(dailyEntry => {
+                if (!dailyEntry || !dailyEntry.date || typeof dailyEntry.items !== 'object') return;
+                const dateParts = dailyEntry.date.split('/');
+                if (dateParts.length !== 3) return;
+                const day = String(dateParts[0]).padStart(2, '0');
+                const month = String(dateParts[1]).padStart(2, '0');
+                const year = dateParts[2];
+                const dateStringForPlotly = `${year}-${month}-${day}`;
+                const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                if (isNaN(dateObj.getTime()) || dateObj.getFullYear() !== parseInt(year) || (dateObj.getMonth() + 1) !== parseInt(month) || dateObj.getDate() !== parseInt(day)) {
+                    console.warn("Invalid score date:", dailyEntry.date); return;
+                }
+                selectedItemNames.forEach(itemName => {
+                    if (dailyEntry.items.hasOwnProperty(itemName)) {
+                        const score = parseFloat(dailyEntry.items[itemName]);
+                        if (!itemsScoreData[itemName]) itemsScoreData[itemName] = { dates: [], scores: [] };
+                        itemsScoreData[itemName].dates.push(dateStringForPlotly);
+                        itemsScoreData[itemName].scores.push(score);
+                        allDates.add(dateStringForPlotly);
+                    }
+                });
+            });
+
+            selectedItemNames.forEach(itemName => {
+                if (priceDataGlobal.hasOwnProperty(itemName)) {
+                    const priceEntries = priceDataGlobal[itemName];
+                    if (!Array.isArray(priceEntries)) return;
+                    itemsPriceData[itemName] = { dates: [], prices: [] };
+                    priceEntries.forEach(entry => {
+                        if (!Array.isArray(entry) || entry.length < 2) return;
+                        const plotlyDate = parsePriceDate(entry[0]);
+                        const price = parseFloat(entry[1]);
+                        if (plotlyDate && !isNaN(price)) {
+                            itemsPriceData[itemName].dates.push(plotlyDate);
+                            itemsPriceData[itemName].prices.push(price);
+                            allDates.add(plotlyDate);
+                        }
+                    });
+                }
+            });
+
+            const sortedDates = Array.from(allDates).sort();
+            const plotTraces = [];
+
+            selectedItemNames.sort((a,b) => a.localeCompare(b)).forEach(itemName => {
+                const hasScoreData = itemsScoreData[itemName] && itemsScoreData[itemName].dates.length > 0;
+                const hasPriceData = itemsPriceData[itemName] && itemsPriceData[itemName].dates.length > 0;
+                if (!hasScoreData && !hasPriceData) return;
+
+                if (hasScoreData) {
+                    const scoreMap = new Map(itemsScoreData[itemName].dates.map((d, i) => [d, itemsScoreData[itemName].scores[i]]));
+                    const alignedScores = sortedDates.map(date => scoreMap.get(date) === undefined ? null : scoreMap.get(date));
+                    plotTraces.push({
+                        x: sortedDates, y: alignedScores, mode: 'lines+markers', type: 'scatter',
+                        name: itemName, yaxis: 'y1', legendgroup: itemName, showlegend: true,
+                        marker: { size: 4 }, hovertemplate: `<b>${itemName}</b><br>Date: %{x}<br>Score: %{y}<extra></extra>`
+                    });
+                }
+                if (hasPriceData) {
+                    const priceMap = new Map(itemsPriceData[itemName].dates.map((d, i) => [d, itemsPriceData[itemName].prices[i]]));
+                    const alignedPrices = sortedDates.map(date => priceMap.get(date) === undefined ? null : priceMap.get(date));
+                    plotTraces.push({
+                        x: sortedDates, y: alignedPrices, mode: 'lines', type: 'scatter',
+                        name: hasScoreData ? `${itemName} (Price)` : itemName, yaxis: 'y2', legendgroup: itemName,
+                        showlegend: !hasScoreData, marker: { size: 3, symbol: 'diamond' }, line: { dash: 'dot' },
+                        hovertemplate: `<b>${itemName}</b><br>Date: %{x}<br>Price: %{y:$.2f}<extra></extra>`
+                    });
+                }
+            });
+
+            const layout = {
+                title: `Score & Price Analysis for Selected Items (${selectedItemNames.length})`,
+                xaxis: { title: 'Date', type: 'date', gridcolor: '#e1e1e1' },
+                yaxis: { title: 'Total Spectator Score', rangemode: 'tozero', side: 'left', gridcolor: '#e1e1e1' },
+                yaxis2: {
+                    title: 'Median Price (USD)',
+                    rangemode: 'normal', // Important for dynamic ranging
+                    autorange: true,     // Start with autorange
+                    overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)'
+                },
+                hovermode: 'x unified', legend: { traceorder: 'normal' },
+                plot_bgcolor: '#f9f9f9', paper_bgcolor: '#ffffff',
+            };
+
+            Plotly.newPlot(plotDiv, plotTraces, layout, {responsive: true});
+
+            if (!relayoutListenerAttached) {
+                plotDiv.on('plotly_relayout', function(eventData) {
+                    const currentLayout = plotDiv.layout; // Get current layout which includes current ranges
+
+                    // Check if x-axis range has changed via zoom/pan or reset
+                    const xAxisRangeChanged = eventData && (eventData['xaxis.range[0]'] !== undefined || eventData['xaxis.autorange'] === true);
+
+                    if (xAxisRangeChanged) {
+                        let newY2Min = Infinity;
+                        let newY2Max = -Infinity;
+                        let y2DataFoundInView = false;
+
+                        let xRangeStartEpoch, xRangeEndEpoch;
+
+                        if (eventData['xaxis.autorange'] === true) {
+                            // If x-axis is reset to autorange, y-axis2 should also autorange
+                            Plotly.relayout(plotDiv, { 'yaxis2.autorange': true });
+                            return; // Autorange for y2 will be handled by Plotly
+                        } else {
+                            // Specific x-axis range from event (these are date strings)
+                            // Plotly eventData for date axes gives date strings like "2023-10-26" or "2023-10-26 15:35:00"
+                            xRangeStartEpoch = new Date(eventData['xaxis.range[0]']).getTime();
+                            xRangeEndEpoch = new Date(eventData['xaxis.range[1]']).getTime();
+                        }
+
+                        plotDiv.data.forEach(trace => { // plotDiv.data contains the current traces on the plot
+                            if (trace.yaxis === 'y2') { // Only consider traces on the price axis
+                                for (let i = 0; i < trace.x.length; i++) {
+                                    const xValEpoch = new Date(trace.x[i]).getTime(); // trace.x contains date strings 'YYYY-MM-DD'
+                                    const yVal = trace.y[i];
+
+                                    if (yVal !== null && !isNaN(yVal) && xValEpoch >= xRangeStartEpoch && xValEpoch <= xRangeEndEpoch) {
+                                        newY2Min = Math.min(newY2Min, yVal);
+                                        newY2Max = Math.max(newY2Max, yVal);
+                                        y2DataFoundInView = true;
+                                    }
+                                }
+                            }
+                        });
+
+                        if (y2DataFoundInView) {
+                            const range = newY2Max - newY2Min;
+                            // Add 5% padding, or a small absolute value if range is tiny/zero
+                            const padding = range === 0 ? (Math.abs(newY2Max * 0.1) || 0.1) : range * 0.05;
+
+                            const finalMin = newY2Min - padding;
+                            const finalMax = newY2Max + padding;
+
+                            Plotly.relayout(plotDiv, {
+                                'yaxis2.range': [finalMin, finalMax],
+                                'yaxis2.autorange': false // We've set a specific range
+                            });
+                        } else if (eventData['xaxis.range[0]'] !== undefined) {
+                             // No Y2 data in the current X zoom.
+                             // Option 1: Do nothing, let yaxis2 keep its previous range.
+                             // Option 2: Autorange yaxis2 (might be jarring if it jumps to global).
+                             // Option 3: Set a minimal default range.
+                             // For now, let's do nothing specific, Plotly might keep old range or show a default.
+                             // If you prefer to always show *something* or reset:
+                             // Plotly.relayout(plotDiv, { 'yaxis2.autorange': true });
+                        }
+                    }
+                });
+                relayoutListenerAttached = true;
+            }
+            showLoader(false);
+            updateStatusMessage(`Displaying chart for ${selectedItemNames.length} selected item(s).`);
+        }
+    </script>
 </body>
 </html>
