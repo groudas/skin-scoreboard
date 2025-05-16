@@ -5,7 +5,7 @@ import path from 'path';
 import config from '../config.js';
 import { randomSleep } from '../utils.js';
 
-//::Carregar pricedb.json e DAILY_COSMETIC_STATS_MARKETABLE.json::
+//::Load pricedb.json and DAILY_COSMETIC_STATS_MARKETABLE.json::
 let priceDB = {};
 let itemsDB = [];
 
@@ -28,7 +28,6 @@ try {
         console.log(`File ${config.module2.itemsDbFile} loaded and parsed. Found ${itemsDB.length} unique items.`);
     } catch (e) {
         console.error(`Failed to parse ItemsDB file "${config.module2.itemsDbFile}".`, e);
-
     }
 } catch (e) {
     console.error(`Error when loading items database file "${config.module2.itemsDbFile}". Item discovery will be impossible. Only items already in PriceDB will be updated.`, e);
@@ -69,12 +68,8 @@ if (itemsToProcess.size === 0) {
 }
 
 
-//::Função para extrair histórico de preço::
-/**
- * Extracts price history array from a Steam Community Market listing page.
- * @param {string} itemString The name of the item (e.g., "A Dire Gaze").
- * @returns {Promise<Array<Array<string|number|string>> | null>} A promise that resolves with the price history array on success, or null on failure.
- */
+//::Function to extract price history::
+
 async function extractPriceHistory(itemString) {
     let url = `https://steamcommunity.com/market/listings/570/${encodeURIComponent(itemString)}`;
     const targetFingerprint = 'var line1=[[';
@@ -163,61 +158,153 @@ async function extractPriceHistory(itemString) {
     }
 }
 
+function calculateMedian(numbers) {
+    if (!numbers || numbers.length === 0) {
+        return 0; // Or handle as an error, or return null
+    }
+    const sortedNumbers = [...numbers].sort((a, b) => a - b);
+    const mid = Math.floor(sortedNumbers.length / 2);
+
+    if (sortedNumbers.length % 2 === 0) {
+        // Even number of elements, average of the two middle ones
+        return (sortedNumbers[mid - 1] + sortedNumbers[mid]) / 2;
+    } else {
+        // Odd number of elements, the middle one
+        return sortedNumbers[mid];
+    }
+}
+
+function consolidatePriceData(priceDB) {
+    const consolidatedDB = {};
+
+    for (const itemName in priceDB) {
+        if (Object.hasOwnProperty.call(priceDB, itemName)) {
+            const itemEntries = priceDB[itemName];
+            if (!Array.isArray(itemEntries) || itemEntries.length === 0) {
+                consolidatedDB[itemName] = []; // Keep empty if no entries
+                continue;
+            }
+
+            const dailyAggregates = {}; // Key: "Mon DD YYYY", Value: { prices: [], volumes: [], firstFullDate: "" }
+
+            for (const entry of itemEntries) {
+                if (!Array.isArray(entry) || entry.length < 3) {
+                    console.warn(`Skipping malformed entry for ${itemName}:`, entry);
+                    continue;
+                }
+                const [fullDateStr, price, volumeStr] = entry;
+
+                // Extract just the date part (e.g., "May 15 2025")
+                // Assuming format "Mon DD YYYY HH: +TZ"
+                const dateParts = fullDateStr.split(" ");
+                if (dateParts.length < 3) {
+                    console.warn(`Skipping entry with unparseable date for ${itemName}: ${fullDateStr}`);
+                    continue;
+                }
+                const dayKey = `${dateParts[0]} ${dateParts[1]} ${dateParts[2]}`;
+
+                if (!dailyAggregates[dayKey]) {
+                    dailyAggregates[dayKey] = {
+                        prices: [],
+                        volumes: [],
+                        // Store the first full date string encountered for this day
+                        // This will be used as the representative date for the consolidated entry
+                        firstFullDate: fullDateStr
+                    };
+                }
+
+                dailyAggregates[dayKey].prices.push(parseFloat(price));
+                dailyAggregates[dayKey].volumes.push(parseInt(volumeStr, 10));
+            }
+
+            const consolidatedEntriesForItem = [];
+            // Ensure days are processed in chronological order if possible
+            // Object.keys doesn't guarantee order, but if they were added chronologically, they often are.
+            // For true chronological order, you'd parse dayKey and sort.
+            // However, Steam data is usually chronological, so this often works out.
+            const sortedDayKeys = Object.keys(dailyAggregates).sort((a, b) => {
+                // Attempt to sort by date if necessary, though steam data is usually in order
+                // For simplicity, we'll rely on typical insertion order or that steam data is pre-sorted
+                // A more robust sort would parse 'a' and 'b' into Date objects.
+                // For now, let's trust the input order or accept object key order.
+                // To ensure, we'd parse dailyAggregates[a].firstFullDate and dailyAggregates[b].firstFullDate
+                return new Date(dailyAggregates[a].firstFullDate.split(" ").slice(0,3).join(" ")) - new Date(dailyAggregates[b].firstFullDate.split(" ").slice(0,3).join(" "));
+            });
+
+
+            for (const dayKey of sortedDayKeys) {
+                const data = dailyAggregates[dayKey];
+                const medianPrice = calculateMedian(data.prices);
+                const totalVolume = data.volumes.reduce((sum, vol) => sum + vol, 0);
+
+                consolidatedEntriesForItem.push([
+                    data.firstFullDate, // Use the first full date string of that day
+                    parseFloat(medianPrice.toFixed(3)), // Keep 3 decimal places for price
+                    totalVolume.toString()
+                ]);
+            }
+            consolidatedDB[itemName] = consolidatedEntriesForItem;
+        }
+    }
+    return consolidatedDB;
+}
 
 async function processItems() {
     console.log("\n--- Starting price history fetching process ---");
 
     const itemsArrayToProcess = Array.from(itemsToProcess);
+    let itemsProcessedCount = 0;
 
     for (const item of itemsArrayToProcess) {
-        console.log(`\nProcessing item: ${item}`);
-
+        console.log(`\nProcessing item: ${item} (${itemsProcessedCount + 1} of ${itemsArrayToProcess.length})`);
 
         const historyData = await extractPriceHistory(item);
 
         if (historyData) {
-
             priceDB[item] = historyData;
             console.log(`Successfully updated price data for "${item}" in memory.`);
+            itemsProcessedCount++;
 
+            if (itemsProcessedCount > 0 && itemsProcessedCount % 10 === 0) {
+                console.log(`Saving progress after processing ${itemsProcessedCount} items...`);
+                try {
+                    const dir = path.dirname(priceDBFile);
+                    fs.mkdirSync(dir, { recursive: true });
 
-             if (index % 10 === 0) { // Save every 10 items
-                 console.log(`Saving progress after processing ${index + 1} items...`);
-                 try {
-                     const dir = path.dirname(priceDBFile);
-                     fs.mkdirSync(dir, { recursive: true });
-                     fs.writeFileSync(priceDBFile, JSON.stringify(priceDB, null, 2), { encoding: 'utf8' });
-                     console.log("Progress saved.");
-                 } catch (saveError) {
-                     console.error("Error saving progress file:", saveError);
-                 }
-             }
-
+                    // Consolidate before periodic save
+                    const consolidatedDataForSave = consolidatePriceData(priceDB);
+                    fs.writeFileSync(priceDBFile, JSON.stringify(consolidatedDataForSave, null, 2), { encoding: 'utf8' });
+                    console.log("Progress saved (consolidated).");
+                } catch (saveError) {
+                    console.error("Error saving progress file:", saveError);
+                }
+            }
         } else {
             console.warn(`Skipping update for "${item}" due to failed data extraction.`);
         }
 
-        console.log("Waiting randomly before the next request...");
-        await randomSleep();
+        if (itemsArrayToProcess.indexOf(item) < itemsArrayToProcess.length - 1) {
+            console.log("Waiting randomly before the next request...");
+            await randomSleep();
+        }
     }
 
-
-    console.log("\n--- All items processed. Saving final PriceDB file ---");
+    console.log("\n--- All items processed. Consolidating and saving final PriceDB file ---");
     try {
         const dir = path.dirname(priceDBFile);
         fs.mkdirSync(dir, { recursive: true });
 
+        // Consolidate before final save
+        const finalConsolidatedPriceDB = consolidatePriceData(priceDB);
 
-        const jsonOutput = JSON.stringify(priceDB, null, 2);
-
+        const jsonOutput = JSON.stringify(finalConsolidatedPriceDB, null, 2);
         fs.writeFileSync(priceDBFile, jsonOutput, { encoding: 'utf8' });
-        console.log(`Successfully saved updated PriceDB to "${priceDBFile}". Total items saved: ${Object.keys(priceDB).length}`);
+        console.log(`Successfully saved consolidated PriceDB to "${priceDBFile}". Total items saved: ${Object.keys(finalConsolidatedPriceDB).length}`);
     } catch (saveError) {
         console.error(`Error saving final PriceDB file "${priceDBFile}":`, saveError);
     }
 
     console.log("\n--- Price history fetching process finished ---");
 }
-
 
 processItems();
