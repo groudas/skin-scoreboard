@@ -158,20 +158,17 @@ async function extractPriceHistory(itemString) {
     }
 }
 
-function calculateMedian(numbers) {
-    if (!numbers || numbers.length === 0) {
+function calculateWeightedAverage(prices, volumes) {
+    if (!prices || !volumes || prices.length === 0 || prices.length !== volumes.length) {
         return 0; // Or handle as an error, or return null
     }
-    const sortedNumbers = [...numbers].sort((a, b) => a - b);
-    const mid = Math.floor(sortedNumbers.length / 2);
-
-    if (sortedNumbers.length % 2 === 0) {
-        // Even number of elements, average of the two middle ones
-        return (sortedNumbers[mid - 1] + sortedNumbers[mid]) / 2;
-    } else {
-        // Odd number of elements, the middle one
-        return sortedNumbers[mid];
+    let weightedSum = 0;
+    let totalVolume = 0;
+    for (let i = 0; i < prices.length; i++) {
+        weightedSum += prices[i] * volumes[i];
+        totalVolume += volumes[i];
     }
+    return totalVolume === 0 ? 0 : weightedSum / totalVolume;
 }
 
 function consolidatePriceData(priceDB) {
@@ -195,7 +192,6 @@ function consolidatePriceData(priceDB) {
                 const [fullDateStr, price, volumeStr] = entry;
 
                 // Extract just the date part (e.g., "May 15 2025")
-                // Assuming format "Mon DD YYYY HH: +TZ"
                 const dateParts = fullDateStr.split(" ");
                 if (dateParts.length < 3) {
                     console.warn(`Skipping entry with unparseable date for ${itemName}: ${fullDateStr}`);
@@ -207,8 +203,6 @@ function consolidatePriceData(priceDB) {
                     dailyAggregates[dayKey] = {
                         prices: [],
                         volumes: [],
-                        // Store the first full date string encountered for this day
-                        // This will be used as the representative date for the consolidated entry
                         firstFullDate: fullDateStr
                     };
                 }
@@ -218,28 +212,18 @@ function consolidatePriceData(priceDB) {
             }
 
             const consolidatedEntriesForItem = [];
-            // Ensure days are processed in chronological order if possible
-            // Object.keys doesn't guarantee order, but if they were added chronologically, they often are.
-            // For true chronological order, you'd parse dayKey and sort.
-            // However, Steam data is usually chronological, so this often works out.
             const sortedDayKeys = Object.keys(dailyAggregates).sort((a, b) => {
-                // Attempt to sort by date if necessary, though steam data is usually in order
-                // For simplicity, we'll rely on typical insertion order or that steam data is pre-sorted
-                // A more robust sort would parse 'a' and 'b' into Date objects.
-                // For now, let's trust the input order or accept object key order.
-                // To ensure, we'd parse dailyAggregates[a].firstFullDate and dailyAggregates[b].firstFullDate
                 return new Date(dailyAggregates[a].firstFullDate.split(" ").slice(0,3).join(" ")) - new Date(dailyAggregates[b].firstFullDate.split(" ").slice(0,3).join(" "));
             });
 
-
             for (const dayKey of sortedDayKeys) {
                 const data = dailyAggregates[dayKey];
-                const medianPrice = calculateMedian(data.prices);
+                const weightedAvgPrice = calculateWeightedAverage(data.prices, data.volumes);
                 const totalVolume = data.volumes.reduce((sum, vol) => sum + vol, 0);
 
                 consolidatedEntriesForItem.push([
                     data.firstFullDate, // Use the first full date string of that day
-                    parseFloat(medianPrice.toFixed(3)), // Keep 3 decimal places for price
+                    parseFloat(weightedAvgPrice.toFixed(3)), // Keep 3 decimal places for price
                     totalVolume.toString()
                 ]);
             }

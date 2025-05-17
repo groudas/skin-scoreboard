@@ -53,8 +53,8 @@ const config = {
         itemsDbFile: path.join(baseDataDir, 'database', 'daily_cosmetic_stats_marketable.json')
     },
     randomSleep: {
-        minMs: 1000,
-        maxMs: 10000,
+        minMs: 5000,
+        maxMs: 15000,
     }
 };
 
